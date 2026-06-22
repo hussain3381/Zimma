@@ -1,73 +1,57 @@
-# React + TypeScript + Vite
+# Zimma — A Hyper-Local Service Marketplace 🚀
+### **Aptech Vision 2026 — Round 1 Prototype**
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Zimma** is a modern, fast, and secure service-based web platform designed to bridge the gap between local service providers (electricians, plumbers, carpenters, cleaners, AC technicians) and customers across Karachi. Built using a robust and scalable frontend architecture, Zimma aims to create a "Trusted Ecosystem" with localized search and a sustainable 5% commission model.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🌟 Key Features (Current Prototype)
 
-## React Compiler
+- **Dual-Interface Dashboard Architecture:**
+  - **Customer Dashboard:** Allows users to browse services, check verified provider ratings, manage bookings, and view transparent pricing.
+  - **Provider Dashboard:** Enables local technicians to manage incoming orders, track active jobs, and monitor their earnings seamlessly.
+- **State-Driven Workflows:** Full authentication context simulation (`AuthProvider` & `AdminProvider`) protecting dashboard routes.
+- **Highly Responsive UI:** Designed with a mobile-first approach using Tailwind CSS and accessible Shadcn UI components.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🛠️ Tech Stack & Architecture
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Core Framework:** React.js (via Vite for lightning-fast build times)
+- **Routing:** TanStack Router (File-based, 100% type-safe routing to eliminate broken links)
+- **Data Management:** TanStack Query (React Query for optimized server-state caching and seamless loading flows)
+- **Styling & Components:** Tailwind CSS & Shadcn UI (Component-driven customization)
+- **Toasts & Notifications:** Sonner (Elegant, non-blocking user feedback)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 🚀 Getting Started (Local Development)
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Follow these steps to run the project locally on your machine:
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/hussain3381/Zimma.git](https://github.com/hussain3381/Zimma.git)
+   cd Zimma
+Install dependencies:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Bash
+npm install
+Start the development server:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Bash
+npm run dev
+🗺️ Roadmap: Vision for Round 2 & Round 3
+As this project advances through the next rounds of Aptech Vision 2026, the following enterprise-grade features will be integrated:
+
+[ ] Round 2: Dynamic Geolocation & Backend Integration
+
+Moving from simulated data to a live database (Node.js/Express + MongoDB).
+
+Integration of Google Maps API / Leaflet.js for real-time, radius-based provider search.
+
+[ ] Round 3: Real-Time Features & Payments
+
+WebSockets (Socket.io) integration for live tracking and in-app chat between client and provider.
+
+Payment gateway integration (Stripe / Local Wallets) automate the 5% commission split.
