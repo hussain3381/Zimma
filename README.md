@@ -33,24 +33,24 @@ Follow these steps to run the project locally on your machine:
    ```bash
    git clone [https://github.com/hussain3381/Zimma.git](https://github.com/hussain3381/Zimma.git)
    cd Zimma
-Install dependencies:
+2. **Install dependencies:**
+   ```bash
+   npm install
 
-Bash
-npm install
-Start the development server:
-
-Bash
-npm run dev
-🗺️ Roadmap: Vision for Round 2 & Round 3
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   
+## **Roadmap: Vision for Round 2 & Round 3**
 As this project advances through the next rounds of Aptech Vision 2026, the following enterprise-grade features will be integrated:
 
-[ ] Round 2: Dynamic Geolocation & Backend Integration
+> **Round 2: Dynamic Geolocation & Backend Integration**
 
 Moving from simulated data to a live database (Node.js/Express + MongoDB).
 
 Integration of Google Maps API / Leaflet.js for real-time, radius-based provider search.
 
-[ ] Round 3: Real-Time Features & Payments
+> **Round 3: Real-Time Features & Payments**
 
 WebSockets (Socket.io) integration for live tracking and in-app chat between client and provider.
 
