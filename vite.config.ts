@@ -5,7 +5,6 @@ import { TanStackRouterVite } from "@tanstack/router-plugin/vite"; // Sirf ye ch
 import path from "path";
 
 export default defineConfig({
-  base: '/Zimma/',
   plugins: [
     TanStackRouterVite(), // Sirf ye plugin
     react(),
