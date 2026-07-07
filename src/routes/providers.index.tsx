@@ -1,12 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { Search, SlidersHorizontal, MapPin } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Search, SlidersHorizontal, MapPin, Loader2 } from "lucide-react";
 import { Navbar } from "@/components/zimma/Navbar";
 import { Footer } from "@/components/zimma/Footer";
 import { ProviderCard } from "@/components/zimma/cards";
-import { providers, categories } from "@/components/zimma/data";
+import { categories } from "@/components/zimma/data";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import type { ProviderRow } from "@/components/zimma/auth-context";
+import { rowToProvider } from "@/components/zimma/provider-mapping";
 
 export const Route = createFileRoute("/providers/")({
   head: () => ({
@@ -21,26 +24,41 @@ export const Route = createFileRoute("/providers/")({
 function ProvidersPage() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"rating" | "jobs" | "exp">("rating");
+  const [rows, setRows] = useState<ProviderRow[] | null>(null);
 
-  const list = providers
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      const { data } = await supabase.from("providers").select("*").eq("status", "approved");
+      if (mounted) setRows((data ?? []) as ProviderRow[]);
+    };
+    load();
+    const ch = supabase
+      .channel("providers-list")
+      .on("postgres_changes", { event: "*", schema: "public", table: "providers" }, load)
+      .subscribe();
+    return () => { mounted = false; supabase.removeChannel(ch); };
+  }, []);
+
+  const list = (rows ?? [])
     .filter((p) =>
-      [p.name, p.trade, p.area, ...p.skills].join(" ").toLowerCase().includes(q.toLowerCase())
+      [p.name, p.profession, p.area, ...(p.skills ?? [])].join(" ").toLowerCase().includes(q.toLowerCase())
     )
     .sort((a, b) => {
-      if (sort === "rating") return b.rating - a.rating;
-      if (sort === "jobs") return b.jobs - a.jobs;
+      if (sort === "rating") return Number(b.rating) - Number(a.rating);
+      if (sort === "jobs") return b.total_jobs - a.total_jobs;
       return b.experience - a.experience;
-    });
+    })
+    .map(rowToProvider);
 
   return (
     <div className="min-h-screen">
       <Navbar />
-
       <header className="hero-gradient">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <p className="text-xs font-semibold uppercase tracking-widest text-primary">Karachi pros</p>
           <h1 className="mt-2 text-4xl font-bold tracking-tight sm:text-5xl">Find your perfect pro</h1>
-          <p className="mt-3 max-w-2xl text-muted-foreground">3,800+ verified providers across DHA, Clifton, Gulshan, North Nazimabad and more.</p>
+          <p className="mt-3 max-w-2xl text-muted-foreground">Verified providers across DHA, Clifton, Gulshan, North Nazimabad and more.</p>
 
           <div className="mt-8 grid gap-3 rounded-2xl border border-border bg-card p-3 shadow-card sm:grid-cols-[1fr_auto_auto]">
             <div className="relative">
@@ -63,7 +81,9 @@ function ProvidersPage() {
 
       <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground"><span className="font-semibold text-foreground">{list.length}</span> pros available now</p>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">{rows === null ? "…" : list.length}</span> pros available now
+          </p>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Sort by:</span>
             {(["rating", "jobs", "exp"] as const).map((s) => (
@@ -80,7 +100,6 @@ function ProvidersPage() {
           </div>
         </div>
 
-        {/* Trade chips */}
         <div className="mb-8 flex flex-wrap gap-2">
           {categories.slice(0, 8).map((c) => (
             <button
@@ -93,11 +112,21 @@ function ProvidersPage() {
           ))}
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {list.map((p) => <ProviderCard key={p.id} p={p} />)}
-        </div>
+        {rows === null ? (
+          <div className="flex justify-center py-20 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        ) : list.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-card/60 p-10 text-center">
+            <h3 className="text-lg font-semibold">No approved pros yet</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Once the Super Admin approves new registrations, they'll appear here in real time.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {list.map((p) => <ProviderCard key={p.id} p={p} />)}
+          </div>
+        )}
       </section>
-
       <Footer />
     </div>
   );

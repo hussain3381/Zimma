@@ -215,11 +215,11 @@ function Landing() {
         <div className="grid gap-6 rounded-3xl border border-border bg-card p-6 shadow-card sm:p-8 md:grid-cols-2 md:p-12">
           <div>
             <h2 className="text-2xl font-bold sm:text-3xl">Are you a skilled professional?</h2>
-            <p className="mt-3 text-sm text-muted-foreground sm:text-base">Join 3,800+ pros earning weekly with Zimma. Set your hours, your area, your prices.</p>
+            <p className="mt-3 text-sm text-muted-foreground sm:text-base">Sign up for a free Zimma account, then apply as a Service Pro from your dashboard — we'll verify you and get you jobs.</p>
           </div>
           <div className="flex items-stretch md:items-center md:justify-end">
-            <Link to="/auth" search={{ role: "provider" } as never} className="w-full md:w-auto">
-              <Button size="lg" className="w-full shadow-glow btn-glow md:w-auto">Become a Zimma Pro</Button>
+            <Link to="/auth" className="w-full md:w-auto">
+              <Button size="lg" className="w-full shadow-glow btn-glow md:w-auto">Sign up to apply as a Pro</Button>
             </Link>
           </div>
         </div>
@@ -267,4 +267,3 @@ function BigStat({ value, suffix, label, decimals }: { value: number; suffix?: s
     </div>
   );
 }
-

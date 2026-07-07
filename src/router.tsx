@@ -1,11 +1,29 @@
-import { RouterProvider, createRouter } from "@tanstack/react-router";
-import { routeTree } from "./routeTree.gen"; // Yeh file ab auto-generate hogi
+// import { RouterProvider, createRouter } from "@tanstack/react-router";
+// import { routeTree } from "./routeTree.gen"; // Yeh file ab auto-generate hogi
 
-const router = createRouter({ routeTree });
+// const router = createRouter({ routeTree });
 
-export default function App() {
-  return <RouterProvider router={router} />;
-}
+// export default function App() {
+//   return <RouterProvider router={router} />;
+// }
+
+import { QueryClient } from "@tanstack/react-query";
+import { createRouter } from "@tanstack/react-router";
+import { routeTree } from "./routeTree.gen";
+
+export const getRouter = () => {
+  const queryClient = new QueryClient();
+
+  const router = createRouter({
+    routeTree,
+    context: { queryClient },
+    scrollRestoration: true,
+    defaultPreloadStaleTime: 0,
+  });
+
+  return router;
+};
+
 // import { RouterProvider, createRouter, createRootRoute, createRoute } from "@tanstack/react-router";
 // import { Landing } from "./routes/index";
 // import { ServicesPage } from "./routes/services"; // Naya page import kiya

@@ -1,19 +1,19 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { Star, MapPin, ShieldCheck, Briefcase, Clock, MessageCircle, Phone, Share2, Heart, ChevronLeft, CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Star, MapPin, ShieldCheck, Briefcase, Clock, MessageCircle, Phone, Share2, ChevronLeft, CheckCircle2, Loader2 } from "lucide-react";
 import { Navbar } from "@/components/zimma/Navbar";
 import { Footer } from "@/components/zimma/Footer";
 import { ReviewCard } from "@/components/zimma/cards";
-import { providers } from "@/components/zimma/data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { supabase } from "@/integrations/supabase/client";
+import type { ProviderRow } from "@/components/zimma/auth-context";
+import { rowToProvider } from "@/components/zimma/provider-mapping";
+import { FavoriteButton } from "@/components/zimma/favorites";
 
 export const Route = createFileRoute("/providers/$id")({
-  loader: ({ params }) => {
-    const p = providers.find((x) => x.id === params.id);
-    if (!p) throw notFound();
-    return p;
-  },
+  component: ProviderProfile,
   notFoundComponent: () => (
     <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">
@@ -22,14 +22,9 @@ export const Route = createFileRoute("/providers/$id")({
       </div>
     </div>
   ),
-  component: ProviderProfile,
 });
 
-const reviews = [
-  { name: "Hassan A.", area: "DHA", text: "Showed up on time, fixed the issue, cleaned up after himself. Will book again.", rating: 5 },
-  { name: "Maryam K.", area: "Clifton", text: "Very professional and explained everything. Worth every rupee.", rating: 5 },
-  { name: "Bilal S.", area: "Gulshan", text: "Solid work — finished faster than I expected. Recommended.", rating: 4 },
-];
+type ReviewRow = { id: string; rating: number; comment: string | null; created_at: string; customer_id: string };
 
 const portfolio = [
   "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=600",
@@ -41,29 +36,71 @@ const portfolio = [
 ];
 
 function ProviderProfile() {
-  const p = Route.useLoaderData();
+  const { id } = Route.useParams();
+  const [row, setRow] = useState<ProviderRow | null | undefined>(undefined);
+  const [reviews, setReviews] = useState<ReviewRow[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      const { data } = await supabase.from("providers").select("*").eq("id", id).eq("status", "approved").maybeSingle();
+      if (mounted) setRow((data as ProviderRow) ?? null);
+    };
+    load();
+    const ch = supabase
+      .channel(`provider-detail-${id}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "providers", filter: `id=eq.${id}` }, load)
+      .subscribe();
+    return () => { mounted = false; supabase.removeChannel(ch); };
+  }, [id]);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      const { data } = await supabase
+        .from("reviews")
+        .select("id, rating, comment, created_at, customer_id")
+        .eq("provider_id", id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (mounted) setReviews((data ?? []) as ReviewRow[]);
+    };
+    load();
+    const ch = supabase
+      .channel(`reviews-${id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviews", filter: `provider_id=eq.${id}` }, load)
+      .subscribe();
+    return () => { mounted = false; supabase.removeChannel(ch); };
+  }, [id]);
+
+  if (row === undefined) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
+  if (row === null) throw notFound();
+  const p = rowToProvider(row);
 
   return (
     <div className="min-h-screen">
       <Navbar />
 
-      {/* Cover */}
-      <div className="relative h-32 bg-slate-300 border-b border-border sm:h-48">
-        <div className="absolute inset-0 opacity-40 z-0" style={{ backgroundImage: "radial-gradient(circle at 20% 20%, hsl(var(--primary) / 0.15) 1px, transparent 1px), radial-gradient(circle at 80% 60%, hsl(var(--primary) / 0.15) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
+      <div className="absolute z-0 h-32 bg-primary-soft sm:h-48">
         <div className="absolute left-4 top-4 sm:left-8 sm:top-8">
           <Link to="/providers">
             <Button variant="secondary" size="sm" className="gap-1"><ChevronLeft className="h-4 w-4" /> Back</Button>
           </Link>
         </div>
-        <div className="absolute right-4 top-4 flex gap-2 sm:right-8 sm:top-8">
+        <div className="absolute right-4 top-4 flex items-center gap-2 sm:right-8 sm:top-8">
           <Button variant="secondary" size="icon" className="h-9 w-9 rounded-full"><Share2 className="h-4 w-4" /></Button>
-          <Button variant="secondary" size="icon" className="h-9 w-9 rounded-full"><Heart className="h-4 w-4" /></Button>
+          <FavoriteButton providerId={id} />
         </div>
       </div>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Profile header */}
-        <div className="-mt-25 relative z-50 grid gap-6 rounded-3xl border border-border bg-card p-5 shadow-card sm:p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
+        <div className="-mt-10 grid gap-6 rounded-3xl border border-border bg-card p-5 shadow-card sm:-mt-16 sm:p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
           <img src={p.avatar} alt={p.name} className="h-24 w-24 rounded-2xl ring-4 ring-card sm:h-28 sm:w-28 lg:h-32 lg:w-32" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -71,6 +108,11 @@ function ProviderProfile() {
               {p.verified && (
                 <Badge className="gap-1 rounded-full bg-success-soft text-success hover:bg-success-soft">
                   <ShieldCheck className="h-3 w-3" /> Verified
+                </Badge>
+              )}
+              {row.is_online && (
+                <Badge className="gap-1 rounded-full bg-emerald-100 text-emerald-700">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" /> Online
                 </Badge>
               )}
             </div>
@@ -83,26 +125,22 @@ function ProviderProfile() {
             </div>
           </div>
           <div className="flex flex-col items-stretch gap-2 lg:items-end">
-            <div className="flex items-baseline justify-between gap-2 lg:justify-end">
-              <div className="text-2xl font-bold text-foreground">{p.price}</div>
-              <div className="text-xs text-success lg:hidden">{p.available}</div>
-            </div>
-            <div className="hidden text-xs text-success lg:block">{p.available}</div>
+            <div className="text-2xl font-bold text-foreground">{p.price}</div>
+            <div className="text-xs text-success">{p.available}</div>
             <div className="mt-2 flex gap-2">
-              <Button variant="outline" size="icon" className="shrink-0"><MessageCircle className="h-4 w-4" /></Button>
-              <Button variant="outline" size="icon" className="shrink-0"><Phone className="h-4 w-4" /></Button>
-              <Button size="lg" className="flex-1 shadow-glow">Book Now</Button>
+              <Button variant="outline" size="icon"><MessageCircle className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon"><Phone className="h-4 w-4" /></Button>
+              <Link to="/book" search={{ providerId: id }} className="flex-1"><Button size="lg" className="w-full shadow-glow">Book Now</Button></Link>
             </div>
           </div>
         </div>
 
-        {/* Content grid */}
         <div className="mt-8 grid gap-8 lg:grid-cols-3">
           <div className="space-y-8 lg:col-span-2">
             <Card className="rounded-2xl border-border bg-card p-6 shadow-soft">
               <h2 className="text-lg font-bold">About</h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                {p.name} is a {p.trade.toLowerCase()} with {p.experience} years of hands-on experience serving households across {p.area} and greater Karachi. Known for punctuality, transparent quotes, and clean finish — over {p.reviews} verified customers have given an average rating of {p.rating}/5.
+                {row.bio || `${p.name} is a ${p.trade.toLowerCase()} serving households across ${p.area} and greater Karachi.`}
               </p>
               <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {["CNIC Verified", "Background Check", "Insured Work", "Toolkit Owned"].map((b) => (
@@ -114,14 +152,16 @@ function ProviderProfile() {
               </div>
             </Card>
 
-            <Card className="rounded-2xl border-border bg-card p-6 shadow-soft">
-              <h2 className="text-lg font-bold">Skills & Specialities</h2>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {[...p.skills, "Emergency", "Same-day", "Warranty"].map((s: string) => (
-                  <Badge key={s} variant="secondary" className="rounded-full bg-primary-soft px-3 py-1.5 text-primary hover:bg-primary-soft">{s}</Badge>
-                ))}
-              </div>
-            </Card>
+            {p.skills.length > 0 && (
+              <Card className="rounded-2xl border-border bg-card p-6 shadow-soft">
+                <h2 className="text-lg font-bold">Skills & Specialities</h2>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {p.skills.map((s: string) => (
+                    <Badge key={s} variant="secondary" className="rounded-full bg-primary-soft px-3 py-1.5 text-primary hover:bg-primary-soft">{s}</Badge>
+                  ))}
+                </div>
+              </Card>
+            )}
 
             <Card className="rounded-2xl border-border bg-card p-6 shadow-soft">
               <h2 className="text-lg font-bold">Portfolio</h2>
@@ -142,13 +182,26 @@ function ProviderProfile() {
                   <span className="text-xl font-bold">{p.rating}</span>
                 </div>
               </div>
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                {reviews.map((r) => <ReviewCard key={r.name} {...r} />)}
-              </div>
+              {reviews.length === 0 ? (
+                <p className="mt-5 rounded-2xl border border-dashed border-border bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+                  No reviews yet. Be the first to book and share your experience.
+                </p>
+              ) : (
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  {reviews.map((r) => (
+                    <ReviewCard
+                      key={r.id}
+                      name={`Customer · ${r.customer_id.slice(0, 6)}`}
+                      area={new Date(r.created_at).toLocaleDateString()}
+                      text={r.comment ?? ""}
+                      rating={r.rating}
+                    />
+                  ))}
+                </div>
+              )}
             </Card>
           </div>
 
-          {/* Sidebar */}
           <aside className="space-y-6">
             <Card className="sticky top-20 rounded-2xl border-border bg-card p-6 shadow-card">
               <h3 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Quick book</h3>
@@ -162,13 +215,12 @@ function ProviderProfile() {
                   </button>
                 ))}
               </div>
-              <Button size="lg" className="mt-5 w-full shadow-glow">Book Now</Button>
+              <Link to="/book" search={{ providerId: id }}><Button size="lg" className="mt-5 w-full shadow-glow">Book Now</Button></Link>
               <p className="mt-3 text-center text-[11px] text-muted-foreground">Free cancellation up to 2 hours before</p>
             </Card>
           </aside>
         </div>
       </div>
-
       <Footer />
     </div>
   );

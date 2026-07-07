@@ -1,128 +1,136 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { ShieldCheck, Clock, FileCheck2, UserCheck, PartyPopper, X, ArrowRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Sparkles, ShieldCheck, Clock, FileCheck2, UserCheck, PartyPopper, ArrowLeft, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/components/zimma/auth-context";
 import { PendingSkeleton } from "@/components/zimma/loaders";
-import { Logo } from "@/components/zimma/Logo";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/auth-pending")({
   head: () => ({ meta: [{ title: "Verification Pending — Zimma Pro" }] }),
   component: PendingWrapper,
 });
 
-const DURATION = 30;
-
 function PendingWrapper() {
-  const { ready } = useAuth();
+  const { ready, user } = useAuth();
   if (!ready) return <PendingSkeleton />;
-  return <PendingPage />;
+  return <PendingPage user={user} />;
 }
 
-function PendingPage() {
-  const { user, updateUser } = useAuth();
+function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
   const navigate = useNavigate();
-  const [remaining, setRemaining] = useState(DURATION);
-  const [verified, setVerified] = useState(false);
-  const notifiedRef = useRef(false);
+  const { refresh, signOut } = useAuth();
+
+  // Derive initial application status from whichever shape the user carries.
+  const initial: "pending" | "approved" | "rejected" =
+    user?.role === "provider"
+      ? user.status
+      : user?.role === "customer" && user.providerApplication
+        ? user.providerApplication.status
+        : "pending";
+  const [status, setStatus] = useState(initial);
 
   useEffect(() => {
-    if (!user) {
-      navigate({ to: "/auth", search: { role: "provider" } as never });
-      return;
-    }
-    if (user.role !== "provider") {
+    if (!user) { navigate({ to: "/auth" }); return; }
+    // Approved provider? Send them straight to the pro dashboard.
+    if (user.role === "provider") { navigate({ to: "/dashboard/provider" }); return; }
+    // Customer with no application at all? Nothing to show here.
+    if (user.role === "customer" && !user.providerApplication) {
       navigate({ to: "/dashboard/customer" });
     }
   }, [user, navigate]);
 
   useEffect(() => {
-    const id = setInterval(() => setRemaining((r) => (r > 0 ? r - 1 : 0)), 1000);
-    return () => clearInterval(id);
-  }, []);
+    if (!user) return;
+    const channel = supabase
+      .channel(`provider-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "providers", filter: `id=eq.${user.id}` },
+        (payload) => {
+          const next = (payload.new as { status: "pending" | "approved" | "rejected" }).status;
+          setStatus(next);
+          refresh();
+          if (next === "approved") {
+            setTimeout(() => navigate({ to: "/dashboard/provider" }), 1500);
+          }
+        },
+      )
+      .subscribe();
 
-  useEffect(() => {
-    if (remaining !== 0 || notifiedRef.current) return;
-    notifiedRef.current = true;
-    setVerified(true);
-    updateUser({ verified: true } as never);
-
-    if (typeof window !== "undefined" && "Notification" in window) {
-      try {
-        if (Notification.permission === "granted") {
-          new Notification("Zimma Pro Verified 🎉", { body: "Your Zimma Pro profile has been verified successfully." });
-        } else if (Notification.permission !== "denied") {
-          Notification.requestPermission().then((p) => {
-            if (p === "granted") new Notification("Zimma Pro Verified 🎉", { body: "Your Zimma Pro profile has been verified successfully." });
-          });
+    const iv = setInterval(async () => {
+      const { data } = await supabase.from("providers").select("status").eq("id", user.id).maybeSingle();
+      if (data?.status && data.status !== status) {
+        setStatus(data.status);
+        refresh();
+        if (data.status === "approved") {
+          setTimeout(() => navigate({ to: "/dashboard/provider" }), 1500);
         }
-      } catch {}
-    }
+      }
+    }, 8000);
 
-    const t = setTimeout(() => navigate({ to: "/dashboard/provider" }), 3500);
-    return () => clearTimeout(t);
-  }, [remaining, navigate, updateUser]);
+    return () => { supabase.removeChannel(channel); clearInterval(iv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
-  const progress = ((DURATION - remaining) / DURATION) * 100;
+  const approved = status === "approved";
+  const rejected = status === "rejected";
+  const progress = approved ? 100 : rejected ? 100 : 55;
+
   const steps = [
-    { i: FileCheck2, label: "Documents received", done: progress > 10 },
-    { i: UserCheck, label: "CNIC verification", done: progress > 45 },
-    { i: ShieldCheck, label: "Background check", done: progress > 80 },
-    { i: PartyPopper, label: "Profile approved", done: verified },
+    { i: FileCheck2, label: "Application received", done: true },
+    { i: UserCheck, label: "CNIC verification", done: true },
+    { i: ShieldCheck, label: "Admin review", done: approved || rejected },
+    { i: PartyPopper, label: "Profile approved", done: approved },
   ];
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-primary-soft via-background to-background">
-      {verified && (
-        <div className="fixed left-1/2 top-6 z-50 w-[92%] max-w-md -translate-x-1/2 animate-fade-up">
-          <div className="flex items-start gap-3 rounded-2xl border border-success/30 bg-card p-4 shadow-card">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success">
-              <PartyPopper className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">Congratulations! 🎉</p>
-              <p className="text-sm text-muted-foreground">Your Zimma Pro profile has been verified successfully.</p>
-            </div>
-            <button onClick={() => navigate({ to: "/dashboard/provider" })} className="text-muted-foreground hover:text-foreground">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       <header className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2">
-          <Logo />
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-glow">
+            <Sparkles className="h-5 w-5" />
+          </span>
+          <span className="text-xl font-bold tracking-tight">Zimma</span>
         </Link>
+        <div className="flex items-center gap-2">
+          <Link to="/dashboard/customer">
+            <Button variant="ghost" size="sm" className="gap-1">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard
+            </Button>
+          </Link>
+          <Button variant="ghost" size="sm" onClick={async () => { await signOut(); navigate({ to: "/" }); }} className="gap-1">
+            <LogOut className="h-3.5 w-3.5" /> Sign out
+          </Button>
+        </div>
       </header>
 
       <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
         <Card className="rounded-3xl border-border bg-card p-6 text-center shadow-card sm:p-10">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-primary-soft text-primary">
-            {verified ? <PartyPopper className="h-10 w-10" /> : <ShieldCheck className="h-10 w-10 animate-pulse" />}
+          <div className={`mx-auto flex h-20 w-20 items-center justify-center rounded-3xl ${rejected ? "bg-destructive/10 text-destructive" : "bg-primary-soft text-primary"}`}>
+            {approved ? <PartyPopper className="h-10 w-10" /> : <ShieldCheck className={`h-10 w-10 ${rejected ? "" : "animate-pulse"}`} />}
           </div>
           <h1 className="mt-6 text-2xl font-bold sm:text-3xl">
-            {verified ? "You're verified!" : "Verification in progress"}
+            {approved ? "You're verified! 🎉" : rejected ? "Application declined" : "Verification in progress"}
           </h1>
           <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground sm:text-base">
-            {verified
+            {approved
               ? "Redirecting you to your Provider Dashboard…"
-              : "Our team is verifying your credentials (CNIC & background check). This usually takes 1 to 24 hours."}
+              : rejected
+                ? "Your Pro application was not approved. Please contact support to review."
+                : "Our Super Admin is reviewing your credentials (CNIC & background check). You'll be notified here instantly once approved. You can keep browsing Zimma in the meantime."}
           </p>
 
-          {/* Countdown */}
           <div className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm font-medium text-muted-foreground">
             <Clock className="h-4 w-4" />
-            {verified ? "Approved" : `Demo: auto-approve in ${remaining}s`}
+            {approved ? "Approved" : rejected ? "Declined" : "Waiting on admin approval"}
           </div>
 
-          {/* Progress */}
           <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-gradient-to-r from-primary to-blue-600 transition-all duration-500" style={{ width: `${progress}%` }} />
+            <div className={`h-full rounded-full transition-all duration-500 ${rejected ? "bg-destructive" : "bg-gradient-to-r from-primary to-blue-600"}`} style={{ width: `${progress}%` }} />
           </div>
 
-          {/* Steps */}
           <div className="mt-8 grid gap-3 text-left sm:grid-cols-2">
             {steps.map((s) => (
               <div
@@ -139,22 +147,13 @@ function PendingPage() {
             ))}
           </div>
 
-          <div className="mt-8 flex flex-col items-center gap-3">
-            <Button
-              size="lg"
-              disabled={!verified}
-              onClick={() => {
-                updateUser({ verified: true } as never);
-                navigate({ to: "/dashboard/provider" });
-              }}
-              className="w-full gap-2 btn-glow sm:w-auto"
-            >
-              {verified ? "Enter Provider Dashboard" : "Waiting for approval…"}
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              We'll also send a confirmation to your email and SMS. You can safely close this tab.
-            </p>
+          <div className="mt-8 flex flex-wrap justify-center gap-2">
+            <Link to="/dashboard/customer">
+              <Button variant="outline" size="sm">Keep browsing</Button>
+            </Link>
+            <Link to="/providers">
+              <Button variant="ghost" size="sm">See other pros</Button>
+            </Link>
           </div>
         </Card>
       </div>
