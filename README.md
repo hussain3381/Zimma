@@ -39,32 +39,21 @@ Follow these steps to run the project locally on your machine:
     ```
     npm install
 
-3.**Start the development server:**
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   
+## **Roadmap: Vision for Round 2 & Round 3**
+As this project advances through the next rounds of Aptech Vision 2026, the following enterprise-grade features will be integrated:
 
-    ```
-    npm run dev
+> **Round 2: Dynamic Geolocation & Backend Integration**
 
+Moving from simulated data to a live database (Node.js/Express + MongoDB).
 
-## 🗺️ Roadmap & App Evolution
-Round 1 (Completed: The Foundation)
-UI/UX Prototyping and Frontend Architecture.
+Integration of Google Maps API / Leaflet.js for real-time, radius-based provider search.
 
-Dual-dashboard routing (Customer & Provider) using TanStack Router.
+> **Round 3: Real-Time Features & Payments**
 
-Simulated state management and responsive design implementation.
+WebSockets (Socket.io) integration for live tracking and in-app chat between client and provider.
 
-Round 2 (Current Phase: Backend & Live Features)
-Authentication & Database: Migrated from simulated data to a live PostgreSQL database via Supabase with secure User Login (Email/Password & Google OAuth).
-
-Real-Time Communications: (New) Implemented in-app real-time messaging between customers and service providers using Supabase.
-
-In-App Notifications: (New) Action-driven notification system to alert users about booking updates and new messages.
-
-Round 3 (Future Vision: The Enterprise Level)
-As Zimma scales to the final stages, we plan to integrate advanced marketplace features:
-
-Dynamic Geolocation: Integration of Google Maps API / Leaflet.js to allow users to find the nearest providers based on radius search.
-
-Automated Payments: Integration of local payment gateways (like EasyPaisa / Safepay) to automate the 5% commission split securely.
-
-Advanced Analytics: Detailed earnings and performance dashboards for verified service pros.
+Payment gateway integration (Stripe / Local Wallets) automate the 5% commission split.
