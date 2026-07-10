@@ -1,20 +1,30 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Check, ChevronLeft, ChevronRight, Calendar, Clock, MapPin,
-  ShieldCheck, Sparkles, Star, CheckCircle2, Wallet, Home,
+  ShieldCheck, Sparkles, Star, CheckCircle2, Wallet, Home, Loader2,
 } from "lucide-react";
 import { Navbar } from "@/components/zimma/Navbar";
 import { Footer } from "@/components/zimma/Footer";
-import { categories, providers } from "@/components/zimma/data";
+import { categories } from "@/components/zimma/data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Reveal } from "@/components/zimma/animations";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/components/zimma/auth-context";
+import type { ProviderRow } from "@/components/zimma/auth-context";
+import { rowToProvider } from "@/components/zimma/provider-mapping";
+import { toast } from "sonner";
+
+type BookSearch = { providerId?: string };
 
 export const Route = createFileRoute("/book")({
+  validateSearch: (s: Record<string, unknown>): BookSearch => ({
+    providerId: typeof s.providerId === "string" ? s.providerId : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Book a Service — Zimma" },
@@ -27,19 +37,58 @@ export const Route = createFileRoute("/book")({
 const STEPS = ["Service", "Provider", "Date", "Time", "Address", "Confirm"] as const;
 const TIMES = ["09:00 AM", "10:30 AM", "12:00 PM", "01:30 PM", "03:00 PM", "04:30 PM", "06:00 PM"];
 
+function toIsoDateTime(dateLabel: string, timeLabel: string, dates: { iso: string; weekday: string; date: string }[]): string {
+  const match = dates.find((d) => `${d.weekday}, ${d.date}` === dateLabel);
+  const iso = match?.iso ?? new Date().toISOString().slice(0, 10);
+  // parse "01:30 PM"
+  const m = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeLabel);
+  let h = m ? parseInt(m[1], 10) : 9;
+  const min = m ? parseInt(m[2], 10) : 0;
+  const pm = m && /pm/i.test(m[3]);
+  if (pm && h < 12) h += 12;
+  if (!pm && h === 12) h = 0;
+  const local = new Date(`${iso}T${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`);
+  return local.toISOString();
+}
+
 function BookingFlow() {
   const navigate = useNavigate();
-  const [step, setStep] = useState(0);
-  const [done, setDone] = useState(false);
+  const { providerId: initialProviderId } = Route.useSearch();
+  const { authUser } = useAuth();
 
+  const [step, setStep] = useState(initialProviderId ? 0 : 0);
+  const [done, setDone] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [providers, setProviders] = useState<ProviderRow[] | null>(null);
   const [serviceSlug, setServiceSlug] = useState<string | null>(null);
-  const [providerId, setProviderId] = useState<string | null>(null);
+  const [providerId, setProviderId] = useState<string | null>(initialProviderId ?? null);
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [address, setAddress] = useState({ label: "Home", line: "", area: "DHA Phase 6", notes: "" });
 
+  // Load approved providers live
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data } = await supabase.from("providers").select("*").eq("status", "approved");
+      if (mounted) setProviders((data ?? []) as ProviderRow[]);
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const providerRow = providers?.find((p) => p.id === providerId) ?? null;
+
+  // When a providerId is prefilled, auto-select matching service category if we can.
+  useEffect(() => {
+    if (!providerRow || serviceSlug) return;
+    const cat = categories.find((c) => c.name.toLowerCase() === providerRow.profession.toLowerCase());
+    if (cat) setServiceSlug(cat.slug);
+    else setServiceSlug(categories[0]?.slug ?? null);
+  }, [providerRow, serviceSlug]);
+
   const service = categories.find((c) => c.slug === serviceSlug);
-  const provider = providers.find((p) => p.id === providerId);
+  const provider = providerRow ? rowToProvider(providerRow) : null;
 
   const dates = useMemo(() => {
     const out: { iso: string; day: string; date: string; weekday: string }[] = [];
@@ -66,9 +115,38 @@ function BookingFlow() {
     true,
   ][step];
 
+  async function submitBooking() {
+    if (!authUser) {
+      toast.error("Please sign in to confirm your booking.");
+      navigate({ to: "/auth" });
+      return;
+    }
+    if (!providerRow || !date || !time || !service) return;
+    setSubmitting(true);
+    const bookingDateIso = toIsoDateTime(date, time, dates);
+    const fullAddress = `${address.label} — ${address.line}, ${address.area}${address.notes ? ` (${address.notes})` : ""}`;
+    const { error } = await supabase.from("bookings").insert({
+      customer_id: authUser.id,
+      provider_id: providerRow.id,
+      service_type: providerRow.profession,
+      booking_date: bookingDateIso,
+      address: fullAddress,
+      notes: address.notes || null,
+      price: providerRow.hourly_rate,
+      status: "pending",
+    });
+    setSubmitting(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Booking confirmed!");
+    setDone(true);
+  }
+
   function next() {
     if (step < STEPS.length - 1) setStep(step + 1);
-    else setDone(true);
+    else submitBooking();
   }
 
   if (done) {
@@ -92,7 +170,7 @@ function BookingFlow() {
                 <p className="font-semibold">{provider?.name}</p>
                 <p className="text-sm text-muted-foreground">{provider?.trade} · {provider?.area}</p>
               </div>
-              <Badge className="rounded-full bg-success-soft text-success hover:bg-success-soft">Confirmed</Badge>
+              <Badge className="rounded-full bg-success-soft text-success hover:bg-success-soft">Pending</Badge>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <InfoRow icon={Calendar} k="Date" v={date ?? ""} />
@@ -158,7 +236,6 @@ function BookingFlow() {
         </div>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_360px]">
-          {/* Main */}
           <Card key={step} className="animate-fade-up rounded-3xl border-border bg-card p-6 shadow-soft sm:p-8">
             {step === 0 && (
               <>
@@ -192,37 +269,44 @@ function BookingFlow() {
             {step === 1 && (
               <>
                 <h2 className="text-lg font-bold">Choose a professional</h2>
-                <p className="text-sm text-muted-foreground">Top-rated, verified pros available for {service?.name ?? "this service"}.</p>
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  {providers.map((p) => {
-                    const selected = providerId === p.id;
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => setProviderId(p.id)}
-                        className={`flex items-start gap-4 rounded-2xl border p-4 text-left transition hover-lift ${
-                          selected ? "border-primary bg-primary-soft shadow-glow" : "border-border bg-card"
-                        }`}
-                      >
-                        <img src={p.avatar} alt="" className="h-14 w-14 rounded-xl ring-2 ring-primary/10" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <p className="truncate text-sm font-semibold">{p.name}</p>
-                            {p.verified && <ShieldCheck className="h-3.5 w-3.5 text-success" />}
+                <p className="text-sm text-muted-foreground">Verified pros currently live on Zimma.</p>
+                {providers === null ? (
+                  <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                ) : providers.length === 0 ? (
+                  <p className="mt-6 rounded-2xl border border-dashed border-border bg-muted/40 p-6 text-center text-sm text-muted-foreground">No approved pros available yet.</p>
+                ) : (
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    {providers.map((row) => {
+                      const p = rowToProvider(row);
+                      const selected = providerId === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => setProviderId(p.id)}
+                          className={`flex items-start gap-4 rounded-2xl border p-4 text-left transition hover-lift ${
+                            selected ? "border-primary bg-primary-soft shadow-glow" : "border-border bg-card"
+                          }`}
+                        >
+                          <img src={p.avatar} alt="" className="h-14 w-14 rounded-xl ring-2 ring-primary/10" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <p className="truncate text-sm font-semibold">{p.name}</p>
+                              {p.verified && <ShieldCheck className="h-3.5 w-3.5 text-success" />}
+                            </div>
+                            <p className="truncate text-xs text-muted-foreground">{p.trade} · {p.area}</p>
+                            <div className="mt-1.5 flex items-center gap-2 text-xs">
+                              <span className="flex items-center gap-1 font-semibold text-amber-500">
+                                <Star className="h-3 w-3 fill-amber-400" /> {p.rating}
+                              </span>
+                              <span className="text-muted-foreground">· {p.jobs} jobs</span>
+                              <span className="ml-auto font-semibold text-foreground">{p.price}</span>
+                            </div>
                           </div>
-                          <p className="truncate text-xs text-muted-foreground">{p.trade} · {p.area}</p>
-                          <div className="mt-1.5 flex items-center gap-2 text-xs">
-                            <span className="flex items-center gap-1 font-semibold text-amber-500">
-                              <Star className="h-3 w-3 fill-amber-400" /> {p.rating}
-                            </span>
-                            <span className="text-muted-foreground">· {p.jobs} jobs</span>
-                            <span className="ml-auto font-semibold text-foreground">{p.price}</span>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </>
             )}
 
@@ -307,7 +391,7 @@ function BookingFlow() {
                       onChange={(e) => setAddress({ ...address, area: e.target.value })}
                       className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                     >
-                      {["Layari","Keamari","Saddar","DHA Phase 6", "DHA Phase 5", "Clifton", "Gulshan-e-Iqbal", "PECHS", "North Nazimabad", "Bahadurabad", "Bahria Town", "Korangi"].map((a) => (
+                      {["DHA Phase 6", "DHA Phase 5", "Clifton", "Gulshan-e-Iqbal", "PECHS", "North Nazimabad", "Bahadurabad", "Bahria Town", "Korangi"].map((a) => (
                         <option key={a}>{a}</option>
                       ))}
                     </select>
@@ -345,7 +429,6 @@ function BookingFlow() {
               </>
             )}
 
-            {/* Step controls */}
             <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-6">
               <Button
                 variant="ghost"
@@ -356,17 +439,17 @@ function BookingFlow() {
               </Button>
               <Button
                 onClick={next}
-                disabled={!canNext}
+                disabled={!canNext || submitting}
                 size="lg"
                 className="ml-auto gap-2 shadow-glow btn-glow"
               >
-                {step === STEPS.length - 1 ? "Confirm booking" : "Continue"}
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {step === STEPS.length - 1 ? (submitting ? "Submitting…" : "Confirm booking") : "Continue"}
                 {step !== STEPS.length - 1 && <ChevronRight className="h-4 w-4" />}
               </Button>
             </div>
           </Card>
 
-          {/* Summary sidebar */}
           <aside className="space-y-4">
             <Card className="rounded-3xl border-border bg-card p-6 shadow-card">
               <p className="text-xs font-semibold uppercase tracking-widest text-primary">Your booking</p>

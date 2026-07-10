@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   Home, Calendar, Briefcase, Wallet, MessageSquare, Settings, Star, TrendingUp,
-  Clock, CheckCircle2, Search, Send, ArrowDownToLine, User, Lock, IdCard, BadgeCheck, Pencil, Save, X, MapPin, Phone, Mail,
+  Clock, CheckCircle2, ArrowDownToLine, User, Lock, IdCard, BadgeCheck, Pencil, Save, X, MapPin, Phone, Mail, Bell,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/zimma/DashboardLayout";
 import { CountUp } from "@/components/zimma/animations";
@@ -14,6 +14,8 @@ import { Switch } from "@/components/ui/switch";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Area, AreaChart, BarChart, Bar } from "recharts";
 import { useAuth } from "@/components/zimma/auth-context";
 import { DashboardSkeleton } from "@/components/zimma/loaders";
+import { ChatInbox, useUnreadMessageCount } from "@/components/zimma/chat";
+import { NotificationsPanel as LiveNotificationsPanel, useNotificationBadge } from "@/components/zimma/notification-center";
 
 export const Route = createFileRoute("/dashboard/provider")({
   head: () => ({ meta: [{ title: "Provider Dashboard — Zimma" }] }),
@@ -24,28 +26,68 @@ function ProviderDashboardWrapper() {
   const { user, ready } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (ready && (!user || user.role !== "provider")) {
-      navigate({ to: "/auth", search: { role: "provider" } as never });
-    }
+    if (!ready) return;
+    if (!user) { navigate({ to: "/auth", search: { role: "provider" } as never }); return; }
+    if (user.role !== "provider") { navigate({ to: "/dashboard/customer" }); return; }
+    if (user.status !== "approved") { navigate({ to: "/auth/pending" }); return; }
   }, [ready, user, navigate]);
-  if (!ready || !user || user.role !== "provider") return <DashboardSkeleton />;
+  if (!ready || !user || user.role !== "provider" || user.status !== "approved") return <DashboardSkeleton />;
   return <ProviderDashboard />;
 }
 
-const earnings = [
-  { d: "Mon", v: 3200 }, { d: "Tue", v: 4800 }, { d: "Wed", v: 2900 },
-  { d: "Thu", v: 6100 }, { d: "Fri", v: 5400 }, { d: "Sat", v: 7800 }, { d: "Sun", v: 4200 },
-];
+type BookingRow = {
+  id: string;
+  customer_id: string;
+  provider_id: string;
+  service_type: string;
+  booking_date: string;
+  status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "rejected";
+  price: number;
+  address: string | null;
+  created_at: string;
+};
 
-const activeJobs = [
-  { service: "Wiring Inspection", customer: "Mr. Hassan", area: "DHA Phase 5", time: "Today, 4:00 PM", status: "In Progress", price: "PKR 1,800" },
-  { service: "MCB Replacement", customer: "Mrs. Sana", area: "Clifton", time: "Today, 6:30 PM", status: "Confirmed", price: "PKR 2,400" },
-  { service: "Inverter Setup", customer: "Mr. Bilal", area: "Gulshan", time: "Tomorrow, 10:00 AM", status: "Confirmed", price: "PKR 4,500" },
-];
+function useProviderBookings() {
+  const { authUser } = useAuth();
+  const [rows, setRows] = useState<BookingRow[] | null>(null);
+  useEffect(() => {
+    if (!authUser) { setRows([]); return; }
+    let mounted = true;
+    const load = async () => {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data } = await supabase.from("bookings").select("*")
+        .eq("provider_id", authUser.id)
+        .order("booking_date", { ascending: false });
+      if (mounted) setRows((data ?? []) as BookingRow[]);
+    };
+    load();
+    let cleanup: (() => void) | undefined;
+    (async () => {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const ch = supabase.channel(`bookings-prov-${authUser.id}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: `provider_id=eq.${authUser.id}` }, load)
+        .subscribe();
+      cleanup = () => { supabase.removeChannel(ch); };
+    })();
+    return () => { mounted = false; cleanup?.(); };
+  }, [authUser?.id]);
+  return rows;
+}
+
+const provStatusStyle: Record<BookingRow["status"], string> = {
+  pending: "bg-amber-100 text-amber-700 hover:bg-amber-100",
+  confirmed: "bg-primary-soft text-primary hover:bg-primary-soft",
+  in_progress: "bg-blue-100 text-blue-700 hover:bg-blue-100",
+  completed: "bg-success-soft text-success hover:bg-success-soft",
+  cancelled: "bg-muted text-muted-foreground hover:bg-muted",
+  rejected: "bg-destructive/10 text-destructive hover:bg-destructive/10",
+};
 
 function ProviderDashboard() {
   const [tab, setTab] = useState("Overview");
   const { user } = useAuth();
+  const unread = useUnreadMessageCount();
+  const notifCount = useNotificationBadge("provider");
   const displayName = user?.role === "provider" ? user.name : "Asif Mehmood";
   const nav = [
     { label: "Overview", icon: Home },
@@ -53,7 +95,8 @@ function ProviderDashboard() {
     { label: "Jobs", icon: Briefcase },
     { label: "Calendar", icon: Calendar },
     { label: "Earnings", icon: Wallet },
-    { label: "Messages", icon: MessageSquare },
+    { label: "Messages", icon: MessageSquare, badge: unread },
+    { label: "Notifications", icon: Bell, badge: notifCount },
     { label: "Settings", icon: Settings },
   ];
 
@@ -66,8 +109,18 @@ function ProviderDashboard() {
       {tab === "Calendar" && <CalendarPanel />}
       {tab === "Earnings" && <EarningsPanel />}
       {tab === "Messages" && <MessagesPanel />}
+      {tab === "Notifications" && <NotificationsTabPanel />}
       {tab === "Settings" && <SettingsPanel />}
     </DashboardLayout>
+  );
+}
+
+function NotificationsTabPanel() {
+  return (
+    <>
+      <SectionHeader title="Notifications" subtitle="Live activity from your customers — jobs, messages, and reviews." />
+      <LiveNotificationsPanel role="provider" />
+    </>
   );
 }
 
@@ -87,38 +140,87 @@ function ProField({ label, value, onChange, icon: Icon, editing, disabled }: { l
 }
 
 function ProProfilePanel() {
-  const { user, updateUser } = useAuth();
+  const { user, refresh } = useAuth();
   const provider = user?.role === "provider" ? user : null;
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    name: provider?.name ?? "Asif Mehmood",
-    email: provider?.email ?? "[email protected]",
+    name: provider?.name ?? "",
+    email: provider?.email ?? "",
     profession: provider?.profession ?? "Electrician",
-    cnic: provider?.cnic ?? "42101-1234567-1",
-    phone: "+92 300 1234567",
-    area: "DHA, Clifton, Gulshan",
-    experience: "8",
-    bio: "Master electrician with 8+ years of experience across residential and commercial wiring, MCB installations, and inverter setups.",
+    cnic: provider?.cnic ?? "",
+    phone: provider?.phone ?? "",
+    area: provider?.area ?? "Karachi",
+    experience: String(provider?.experience ?? 0),
+    hourly_rate: String(provider?.hourly_rate ?? 800),
+    availability: provider?.availability ?? "Available today",
+    skills: (provider?.skills ?? []).join(", "),
+    bio: provider?.bio ?? "",
+    is_online: provider?.is_online ?? false,
   });
 
-  const save = () => {
-    if (provider) {
-      updateUser({ name: form.name, email: form.email, profession: form.profession, cnic: form.cnic } as never);
-    }
+  useEffect(() => {
+    if (!provider) return;
+    setForm({
+      name: provider.name,
+      email: provider.email ?? "",
+      profession: provider.profession,
+      cnic: provider.cnic ?? "",
+      phone: provider.phone ?? "",
+      area: provider.area,
+      experience: String(provider.experience),
+      hourly_rate: String(provider.hourly_rate),
+      availability: provider.availability,
+      skills: (provider.skills ?? []).join(", "),
+      bio: provider.bio,
+      is_online: provider.is_online,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider?.id]);
+
+  const save = async () => {
+    if (!provider) return;
+    setSaving(true);
+    const patch = {
+      name: form.name,
+      profession: form.profession,
+      phone: form.phone,
+      area: form.area,
+      experience: Number(form.experience) || 0,
+      hourly_rate: Number(form.hourly_rate) || 0,
+      availability: form.availability,
+      skills: form.skills.split(",").map((s) => s.trim()).filter(Boolean),
+      bio: form.bio,
+      is_online: form.is_online,
+    };
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { toast } = await import("sonner");
+    const { error } = await supabase.from("providers").update(patch).eq("id", provider.id);
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Profile updated — customers see this live.");
     setEditing(false);
+    await refresh();
   };
 
+  const toggleOnline = async (val: boolean) => {
+    if (!provider) return;
+    setForm((f) => ({ ...f, is_online: val }));
+    const { supabase } = await import("@/integrations/supabase/client");
+    await supabase.from("providers").update({ is_online: val }).eq("id", provider.id);
+    await refresh();
+  };
 
   return (
     <>
       <SectionHeader
         title="Pro Profile"
-        subtitle="Your verified Zimma Pro details — visible to customers."
+        subtitle="Your verified Zimma Pro details — visible to customers in real time."
         action={
           editing ? (
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setEditing(false)} className="gap-1"><X className="h-4 w-4" /> Cancel</Button>
-              <Button size="sm" onClick={save} className="gap-1"><Save className="h-4 w-4" /> Save</Button>
+              <Button size="sm" onClick={save} disabled={saving} className="gap-1"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save"}</Button>
             </div>
           ) : (
             <Button size="sm" onClick={() => setEditing(true)} className="gap-1"><Pencil className="h-4 w-4" /> Edit Profile</Button>
@@ -133,16 +235,21 @@ function ProProfilePanel() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-2xl font-bold sm:text-3xl">{form.name}</h2>
-              {(provider?.verified ?? true) && (
+              <h2 className="text-2xl font-bold sm:text-3xl">{form.name || "Your name"}</h2>
+              {provider?.verified && (
                 <Badge className="gap-1 rounded-full bg-success/30 text-white hover:bg-success/30"><BadgeCheck className="h-3.5 w-3.5" /> Verified Pro</Badge>
               )}
             </div>
-            <p className="mt-1 text-sm opacity-90">{form.profession} · {form.experience} yrs experience</p>
+            <p className="mt-1 text-sm opacity-90">{form.profession} · {form.experience || 0} yrs experience</p>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs opacity-90">
-              <span className="flex items-center gap-1"><Star className="h-3.5 w-3.5 fill-current" /> 4.9 (213 reviews)</span>
+              <span className="flex items-center gap-1"><Star className="h-3.5 w-3.5 fill-current" /> {provider?.rating ?? 0} ({provider?.reviews_count ?? 0} reviews)</span>
               <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {form.area}</span>
             </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-xs backdrop-blur">
+            <span className={`h-2 w-2 rounded-full ${form.is_online ? "bg-emerald-300 animate-pulse" : "bg-white/50"}`} />
+            <span>{form.is_online ? "Online" : "Offline"}</span>
+            <Switch checked={form.is_online} onCheckedChange={toggleOnline} />
           </div>
         </div>
       </Card>
@@ -154,10 +261,10 @@ function ProProfilePanel() {
             <ProField editing={editing} label="Full name" icon={User} value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
             <ProField editing={editing} label="Phone" icon={Phone} value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
             <div className="sm:col-span-2">
-              <ProField editing={editing} label="Email" icon={Mail} value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+              <ProField editing={false} label="Email (read only)" icon={Mail} value={form.email} onChange={() => {}} disabled />
             </div>
             <div className="sm:col-span-2">
-              <ProField editing={editing} label="CNIC Number (verified)" icon={IdCard} value={form.cnic} onChange={(v) => setForm({ ...form, cnic: v })} disabled />
+              <ProField editing={false} label="CNIC Number (verified)" icon={IdCard} value={form.cnic} onChange={() => {}} disabled />
             </div>
           </div>
         </Card>
@@ -178,15 +285,20 @@ function ProProfilePanel() {
               )}
             </div>
             <ProField editing={editing} label="Experience (years)" icon={Clock} value={form.experience} onChange={(v) => setForm({ ...form, experience: v })} />
+            <ProField editing={editing} label="Hourly rate (PKR)" icon={Briefcase} value={form.hourly_rate} onChange={(v) => setForm({ ...form, hourly_rate: v })} />
+            <ProField editing={editing} label="Availability" icon={Clock} value={form.availability} onChange={(v) => setForm({ ...form, availability: v })} />
             <div className="sm:col-span-2">
               <ProField editing={editing} label="Service area" icon={MapPin} value={form.area} onChange={(v) => setForm({ ...form, area: v })} />
+            </div>
+            <div className="sm:col-span-2">
+              <ProField editing={editing} label="Skills (comma separated)" icon={BadgeCheck} value={form.skills} onChange={(v) => setForm({ ...form, skills: v })} />
             </div>
             <div className="sm:col-span-2">
               <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">About</label>
               {editing ? (
                 <textarea value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} rows={4} className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm" />
               ) : (
-                <p className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm">{form.bio}</p>
+                <p className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm">{form.bio || "—"}</p>
               )}
             </div>
           </div>
@@ -196,12 +308,12 @@ function ProProfilePanel() {
           <h3 className="flex items-center gap-2 text-lg font-bold"><BadgeCheck className="h-4 w-4 text-success" /> Verification Status</h3>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {[
-              { l: "CNIC Verified", s: form.cnic, ok: true },
-              { l: "Background Check", s: "Cleared on 12 Jun 2026", ok: true },
-              { l: "Profile Approved", s: "Active Zimma Pro", ok: provider?.verified ?? true },
+              { l: "CNIC Verified", s: form.cnic || "Not provided", ok: !!form.cnic },
+              { l: "Admin approval", s: provider?.status === "approved" ? "Approved" : "Pending", ok: provider?.status === "approved" },
+              { l: "Profile live", s: provider?.status === "approved" ? "Visible to customers" : "Hidden until approved", ok: provider?.status === "approved" },
             ].map((v) => (
-              <div key={v.l} className="flex items-start gap-3 rounded-2xl border border-success/30 bg-success-soft/40 p-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-success text-white">
+              <div key={v.l} className={`flex items-start gap-3 rounded-2xl border p-3 ${v.ok ? "border-success/30 bg-success-soft/40" : "border-border bg-muted/40"}`}>
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${v.ok ? "bg-success text-white" : "bg-muted-foreground/20 text-muted-foreground"}`}>
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
@@ -229,29 +341,69 @@ function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: 
   );
 }
 
-function JobRow({ j }: { j: typeof activeJobs[number] }) {
+function BookingJobRow({ b }: { b: BookingRow }) {
+  const { user } = useAuth();
+  const providerId = user?.role === "provider" ? user.id : null;
+  const [busy, setBusy] = useState(false);
+  const [status, setLocalStatus] = useState(b.status);
+
+  useEffect(() => { setLocalStatus(b.status); }, [b.status]);
+
+  const setStatus = async (next: BookingRow["status"]) => {
+    if (!providerId) return;
+    setBusy(true);
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { toast } = await import("sonner");
+    const { error } = await supabase.from("bookings").update({ status: next }).eq("id", b.id).eq("provider_id", providerId);
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    setLocalStatus(next);
+    toast.success(`Booking marked ${next.replace("_", " ")}`);
+  };
+
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-border p-3 sm:gap-4 sm:p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
         <Briefcase className="h-5 w-5" />
       </div>
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold sm:text-base">{j.service}</p>
-        <p className="truncate text-xs text-muted-foreground sm:text-sm">{j.customer} · {j.area}</p>
+        <p className="truncate text-sm font-semibold sm:text-base">{b.service_type}</p>
+        <p className="truncate text-xs text-muted-foreground sm:text-sm">{b.address ?? "Address pending"}</p>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {j.time}</span>
-          <Badge className={`rounded-full ${j.status === "In Progress" ? "bg-amber-100 text-amber-700 hover:bg-amber-100" : "bg-primary-soft text-primary hover:bg-primary-soft"}`}>{j.status}</Badge>
+          <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {new Date(b.booking_date).toLocaleString()}</span>
+          <Badge className={`rounded-full ${provStatusStyle[status]}`}>{status}</Badge>
         </div>
       </div>
-      <div className="col-span-2 flex items-center justify-between gap-3 border-t border-border/60 pt-3 sm:col-span-1 sm:flex-col sm:items-end sm:border-0 sm:pt-0 sm:text-right">
-        <p className="font-semibold">{j.price}</p>
-        <Button size="sm" className="sm:mt-2">Open</Button>
+      <div className="col-span-2 flex items-center justify-between gap-2 border-t border-border/60 pt-3 sm:col-span-1 sm:flex-col sm:items-end sm:border-0 sm:pt-0 sm:text-right">
+        <p className="font-semibold">PKR {b.price}</p>
+        {status === "pending" && (
+          <div className="flex gap-2 sm:mt-2">
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => setStatus("rejected")}>Decline</Button>
+            <Button size="sm" disabled={busy} onClick={() => setStatus("confirmed")}>Accept</Button>
+          </div>
+        )}
+        {status === "confirmed" && (
+          <Button size="sm" disabled={busy} className="sm:mt-2" onClick={() => setStatus("in_progress")}>Start job</Button>
+        )}
+        {status === "in_progress" && (
+          <Button size="sm" disabled={busy} className="sm:mt-2" onClick={() => setStatus("completed")}>Mark complete</Button>
+        )}
       </div>
     </div>
   );
 }
 
 function OverviewPanel() {
+  const bookings = useProviderBookings();
+  const { user } = useAuth();
+  const providerRating = user?.role === "provider" ? Number(user.rating) || 0 : 0;
+
+  const active = (bookings ?? []).filter((b) => b.status === "pending" || b.status === "confirmed" || b.status === "in_progress");
+  const completed = (bookings ?? []).filter((b) => b.status === "completed");
+  const monthEarnings = completed
+    .filter((b) => new Date(b.booking_date).getMonth() === new Date().getMonth())
+    .reduce((sum, b) => sum + (b.price ?? 0), 0);
+
   return (
     <>
       <section className="grid gap-6 lg:grid-cols-3">
@@ -260,37 +412,28 @@ function OverviewPanel() {
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-widest opacity-80 sm:text-xs">Total earnings · this month</p>
               <h1 className="mt-2 text-3xl font-bold sm:text-5xl">
-                PKR <CountUp to={184200} />
+                PKR <CountUp to={monthEarnings} />
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                <Badge className="gap-1 rounded-full bg-success/30 text-white hover:bg-success/30"><TrendingUp className="h-3 w-3" /> +18.2%</Badge>
-                <span className="opacity-80">vs last month</span>
+                <Badge className="gap-1 rounded-full bg-success/30 text-white hover:bg-success/30"><TrendingUp className="h-3 w-3" /> Live</Badge>
+                <span className="opacity-80">from completed jobs</span>
               </div>
             </div>
-            <Button variant="secondary" size="sm">Withdraw</Button>
           </div>
-          <div className="mt-6 h-32 sm:h-40">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={earnings}>
-                <defs>
-                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#fff" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#fff" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="d" stroke="rgba(255,255,255,0.6)" tickLine={false} axisLine={false} fontSize={11} />
-                <Tooltip contentStyle={{ background: "#1E293B", border: "none", borderRadius: 12, color: "#fff" }} />
-                <Area type="monotone" dataKey="v" stroke="#fff" strokeWidth={2.5} fill="url(#g1)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <p className="mt-6 text-sm opacity-80">
+            {bookings === null
+              ? "Loading your job history…"
+              : completed.length === 0
+              ? "Complete your first job to start earning."
+              : `${completed.length} completed job${completed.length === 1 ? "" : "s"} so far.`}
+          </p>
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
           {[
-            { icon: Briefcase, l: "Active jobs", v: 6, c: "bg-primary-soft text-primary" },
-            { icon: CheckCircle2, l: "Completed (mo)", v: 42, c: "bg-success-soft text-success" },
-            { icon: Star, l: "Avg. rating", v: 4.9, decimals: 1, c: "bg-amber-50 text-amber-600" },
+            { icon: Briefcase, l: "Active jobs", v: active.length, c: "bg-primary-soft text-primary" },
+            { icon: CheckCircle2, l: "Completed", v: completed.length, c: "bg-success-soft text-success" },
+            { icon: Star, l: "Avg. rating", v: providerRating, decimals: 1, c: "bg-amber-50 text-amber-600" },
           ].map((s) => (
             <Card key={s.l} className="hover-lift flex items-center gap-4 rounded-2xl border-border bg-card p-4 shadow-soft sm:p-5">
               <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.c}`}><s.icon className="h-5 w-5" /></div>
@@ -307,30 +450,35 @@ function OverviewPanel() {
         <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6 lg:col-span-2">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold">Active bookings</h2>
-            <Button variant="ghost" size="sm">View all</Button>
           </div>
-          <div className="mt-4 space-y-3">{activeJobs.map((j) => <JobRow key={j.service} j={j} />)}</div>
+          <div className="mt-4 space-y-3">
+            {bookings === null ? (
+              <div className="flex justify-center py-8"><Clock className="h-5 w-5 animate-pulse text-muted-foreground" /></div>
+            ) : active.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+                No active jobs. Customers will book you here.
+              </div>
+            ) : (
+              active.map((b) => <BookingJobRow key={b.id} b={b} />)
+            )}
+          </div>
         </Card>
 
         <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
-          <h2 className="text-lg font-bold">Performance</h2>
-          <div className="mt-4 space-y-4">
-            {[
-              { l: "Response time", v: "92%", w: 92 },
-              { l: "Acceptance rate", v: "88%", w: 88 },
-              { l: "On-time arrival", v: "96%", w: 96 },
-              { l: "Job completion", v: "99%", w: 99 },
-            ].map((p) => (
-              <div key={p.l}>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">{p.l}</span>
-                  <span className="font-semibold">{p.v}</span>
+          <h2 className="text-lg font-bold">Recent activity</h2>
+          <div className="mt-4 space-y-3">
+            {(bookings ?? []).slice(0, 5).map((b) => (
+              <div key={b.id} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-xs">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{b.service_type}</p>
+                  <p className="truncate text-muted-foreground">{new Date(b.booking_date).toLocaleDateString()}</p>
                 </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-gradient-to-r from-primary to-success" style={{ width: `${p.w}%` }} />
-                </div>
+                <Badge className={`rounded-full ${provStatusStyle[b.status]}`}>{b.status}</Badge>
               </div>
             ))}
+            {bookings !== null && bookings.length === 0 && (
+              <p className="text-center text-xs text-muted-foreground">Nothing yet.</p>
+            )}
           </div>
         </Card>
       </div>
@@ -339,17 +487,39 @@ function OverviewPanel() {
 }
 
 function JobsPanel() {
+  const bookings = useProviderBookings();
+  const [filter, setFilter] = useState<"all" | BookingRow["status"]>("all");
+  const filters: { key: "all" | BookingRow["status"]; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "pending", label: "Pending" },
+    { key: "confirmed", label: "Confirmed" },
+    { key: "in_progress", label: "In progress" },
+    { key: "completed", label: "Completed" },
+  ];
+  const list = (bookings ?? []).filter((b) => filter === "all" ? true : b.status === filter);
+
   return (
     <>
       <SectionHeader title="Jobs" subtitle="Manage every booking on your plate." />
       <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
         <div className="flex flex-wrap gap-2">
-          {["All", "In Progress", "Confirmed", "Completed"].map((f, i) => (
-            <button key={f} className={`rounded-full px-3 py-1.5 text-xs font-medium ${i === 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{f}</button>
+          {filters.map((f) => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium ${filter === f.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+              {f.label}
+            </button>
           ))}
         </div>
         <div className="mt-5 space-y-3">
-          {[...activeJobs, ...activeJobs].map((j, i) => <JobRow key={i} j={j} />)}
+          {bookings === null ? (
+            <div className="flex justify-center py-10 text-muted-foreground"><Clock className="h-5 w-5 animate-pulse" /></div>
+          ) : list.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+              No jobs in this bucket.
+            </div>
+          ) : (
+            list.map((b) => <BookingJobRow key={b.id} b={b} />)
+          )}
         </div>
       </Card>
     </>
@@ -456,65 +626,14 @@ function EarningsPanel() {
 }
 
 function MessagesPanel() {
-  const chats = [
-    { n: "Mr. Hassan", m: "Aap kitne baje aa rahe hain?", t: "2m", u: 2 },
-    { n: "Mrs. Sana", m: "Shukriya, kal milte hain.", t: "1h", u: 0 },
-    { n: "Mr. Bilal", m: "Inverter setup confirm?", t: "Yest", u: 1 },
-  ];
   return (
     <>
-      <SectionHeader title="Messages" subtitle="Stay in touch with your customers." />
-      <Card className="rounded-2xl border-border bg-card p-0 shadow-soft">
-        <div className="grid lg:grid-cols-[300px_1fr]">
-          <div className="border-b border-border p-3 lg:border-b-0 lg:border-r">
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search chats…" className="rounded-xl pl-9" />
-            </div>
-            <div className="space-y-1">
-              {chats.map((c, i) => (
-                <button key={c.n} className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${i === 0 ? "bg-primary-soft" : "hover:bg-accent"}`}>
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground text-sm font-bold">
-                    {c.n.split(" ").map((x) => x[0]).join("")}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-semibold">{c.n}</p>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{c.t}</span>
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">{c.m}</p>
-                  </div>
-                  {c.u > 0 && <span className="grid h-5 w-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">{c.u}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex h-[480px] flex-col">
-            <div className="border-b border-border p-4">
-              <p className="font-semibold">Mr. Hassan</p>
-              <p className="text-xs text-success">● Online</p>
-            </div>
-            <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              {[
-                { me: false, t: "Salam, kal ki booking confirm hai?" },
-                { me: true, t: "Walaikum salam! Ji bilkul, 4 PM tak pohnch jaunga." },
-                { me: false, t: "Aap kitne baje aa rahe hain?" },
-              ].map((m, i) => (
-                <div key={i} className={`flex ${m.me ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${m.me ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{m.t}</div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2 border-t border-border p-3">
-              <Input placeholder="Type a message…" className="rounded-xl" />
-              <Button size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
-            </div>
-          </div>
-        </div>
-      </Card>
+      <SectionHeader title="Messages" subtitle="Chat with your customers in real time." />
+      <ChatInbox role="provider" />
     </>
   );
 }
+
 
 function SettingsPanel() {
   return (

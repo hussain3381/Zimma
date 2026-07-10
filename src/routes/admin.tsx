@@ -1,17 +1,21 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  ShieldCheck, Lock, Mail, AlertTriangle, LogOut, Settings, KeyRound,
-  Users, Wrench, DollarSign, Activity, ArrowRight, CheckCircle2, ShieldAlert,
+  ShieldCheck, Lock, Mail, AlertTriangle, Sparkles, LogOut, Settings, KeyRound,
+  Users, Wrench, Activity, ArrowRight, CheckCircle2, ShieldAlert,
+  Check, X as XIcon, Loader2, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { useAdmin } from "@/components/zimma/admin-context";
+import { adminListProviders, adminSetProviderStatus, adminGetStats } from "@/lib/admin.client";
+import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/zimma/Logo";
 
 export const Route = createFileRoute("/admin")({
@@ -61,11 +65,14 @@ function AdminGate() {
             "linear-gradient(#00D4B2 1px,transparent 1px),linear-gradient(90deg,#00D4B2 1px,transparent 1px)",
           backgroundSize: "44px 44px",
         }} />
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-[480px] w-[480px] -translate-x-1/2 rounded-full bg-[#00D4B2]/20 blur-3xl" />
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-120 w-120-translate-x-1/2 rounded-full bg-[#00D4B2]/20 blur-3xl" />
 
       <header className="relative z-10 mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2">
-          <Logo className="h-30px"/>
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00D4B2] text-[#0A2540]">
+            <Sparkles className="h-5 w-5" />
+          </span>
+          <span className="text-lg font-bold tracking-tight">Zimma</span>
           <span className="ml-2 rounded-md border border-[#00D4B2]/40 bg-[#00D4B2]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#00D4B2]">
             Admin
           </span>
@@ -118,26 +125,45 @@ function AdminGate() {
 
 /* ---------------- Dashboard ---------------- */
 function AdminDashboard() {
-  const { logout } = useAdmin();
+  const { logout, password } = useAdmin();
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [counts, setCounts] = useState<{ totalUsers: number; totalProviders: number; pendingProviders: number; approvedProviders: number; totalCustomers: number } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const s = await adminGetStats();
+        if (mounted) setCounts(s);
+      } catch { /* ignore */ }
+    };
+    load();
+    const ch = supabase
+      .channel("admin-stats")
+      .on("postgres_changes", { event: "*", schema: "public", table: "providers" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "customer_profiles" }, load)
+      .subscribe();
+    return () => { mounted = false; supabase.removeChannel(ch); };
+  }, [password]);
 
   const stats = [
-    { label: "Total Users", value: "12,847", icon: Users, delta: "+8.2%" },
-    { label: "Active Pros", value: "1,392", icon: Wrench, delta: "+3.1%" },
-    { label: "Bookings (24h)", value: "642", icon: Activity, delta: "+12.4%" },
-    { label: "Revenue (PKR)", value: "₨ 4.8M", icon: DollarSign, delta: "+5.7%" },
+    { label: "Total Users", value: counts ? counts.totalUsers.toLocaleString() : "…", icon: Users },
+    { label: "Active Pros", value: counts ? counts.approvedProviders.toLocaleString() : "…", icon: Wrench },
+    { label: "Pending Pros", value: counts ? counts.pendingProviders.toLocaleString() : "…", icon: Clock },
+    { label: "Customers", value: counts ? counts.totalCustomers.toLocaleString() : "…", icon: Activity },
   ];
+
 
   return (
     <div className="min-h-screen bg-[#0A2540] text-white">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0A2540]/90 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2">
-           <div className="relative"> 
-             <div className="absolute z-[-1] bg-gray-200 w-[85px] h-[60px] left-5 top-[30px] rounded-1"></div> 
-             <Logo className="h-full"/>
-           </div>
+            <span className="flex h-30  items-center justify-center rounded-xl  text-[#00D4B2]">
+              <Logo className="text-base font-bold sm:text-lg " />
+            </span>
+            
             <span className="ml-1 rounded-md border border-[#00D4B2]/40 bg-[#00D4B2]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#00D4B2]">
               Super Admin
             </span>
@@ -162,7 +188,7 @@ function AdminDashboard() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 z-10 ">
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-[#00D4B2]">Terminal Online</p>
@@ -181,13 +207,15 @@ function AdminDashboard() {
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#00D4B2]/15 text-[#00D4B2]">
                   <s.icon className="h-4 w-4" />
                 </span>
-                <span className="text-[11px] font-semibold text-emerald-300">{s.delta}</span>
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[#00D4B2]" />
               </div>
               <p className="mt-3 text-2xl font-bold">{s.value}</p>
               <p className="text-xs text-white/60">{s.label}</p>
             </Card>
           ))}
         </div>
+
+        <PendingApprovals />
 
         <div className="mt-6 grid gap-4 lg:grid-cols-3">
           <Card className="rounded-2xl border-white/10 bg-white/5 p-5 text-white backdrop-blur lg:col-span-2">
@@ -226,6 +254,105 @@ function AdminDashboard() {
     </div>
   );
 }
+
+/* ---------------- Pending approvals ---------------- */
+type ProviderLite = {
+  id: string; name: string; email: string | null; profession: string;
+  phone: string | null; cnic: string | null; area: string;
+  status: "pending" | "approved" | "rejected"; created_at: string;
+};
+
+function PendingApprovals() {
+  const { password } = useAdmin();
+  const [rows, setRows] = useState<ProviderLite[] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      const list = await adminListProviders("pending");
+      setRows(list as ProviderLite[]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load providers");
+      setRows([]);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const ch = supabase
+      .channel("admin-pending")
+      .on("postgres_changes", { event: "*", schema: "public", table: "providers" }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+    /* eslint-disable-next-line */
+  }, []);
+
+
+  const act = async (id: string, status: "approved" | "rejected") => {
+    setBusyId(id);
+    try {
+      await adminSetProviderStatus(id, status);
+      toast.success(status === "approved" ? "Provider approved — now live in marketplace." : "Provider rejected.");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const pending = (rows ?? []).filter((r) => r.status === "pending");
+  const approved = (rows ?? []).filter((r) => r.status === "approved");
+
+  return (
+    <section className="mt-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold sm:text-xl">Provider Approvals</h2>
+          <p className="text-xs text-white/60">Approve or reject new Pro applications — updates propagate live.</p>
+        </div>
+        <Badge className="rounded-full bg-[#00D4B2]/15 text-[#00D4B2] hover:bg-[#00D4B2]/15">
+          {pending.length} pending · {approved.length} live
+        </Badge>
+      </div>
+
+      <Card className="mt-4 rounded-2xl border-white/10 bg-white/5 p-4 text-white backdrop-blur">
+        {rows === null ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-[#00D4B2]" /></div>
+        ) : pending.length === 0 ? (
+          <p className="py-6 text-center text-sm text-white/60">
+            <Clock className="mx-auto mb-2 h-5 w-5 text-white/40" /> No pending applications right now.
+          </p>
+        ) : (
+          <ul className="divide-y divide-white/10">
+            {pending.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#00D4B2]/15 text-sm font-bold text-[#00D4B2]">
+                  {p.name.split(" ").map((x) => x[0]).join("").slice(0, 2)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{p.name} <span className="text-white/50 font-normal">· {p.profession}</span></p>
+                  <p className="truncate text-xs text-white/60">{p.email} · CNIC {p.cnic || "—"} · {p.area}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" disabled={busyId === p.id} onClick={() => act(p.id, "rejected")}
+                    className="gap-1 border-white/20 bg-transparent text-white hover:bg-white/10">
+                    <XIcon className="h-4 w-4" /> Reject
+                  </Button>
+                  <Button size="sm" disabled={busyId === p.id} onClick={() => act(p.id, "approved")}
+                    className="gap-1 bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90">
+                    {busyId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </section>
+  );
+}
+
 
 /* ---------------- Settings modal ---------------- */
 function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {

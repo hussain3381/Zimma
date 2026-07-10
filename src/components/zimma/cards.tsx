@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { FavoriteButton } from "./favorites";
 import type { Provider } from "./data";
 import type { LucideIcon } from "lucide-react";
 
@@ -46,6 +47,7 @@ export function ProviderCard({ p }: { p: Provider }) {
             <MapPin className="h-3 w-3" /> {p.area}
           </div>
         </div>
+        <FavoriteButton providerId={p.id} />
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -97,7 +99,7 @@ export function ProviderCard({ p }: { p: Provider }) {
           <Link to="/providers/$id" params={{ id: p.id }}>
             <Button variant="outline" size="sm">Profile</Button>
           </Link>
-          <Link to="/book">
+          <Link to="/book" search={{ providerId: p.id }}>
             <Button size="sm" className="shadow-glow btn-glow">Book Now</Button>
           </Link>
         </div>

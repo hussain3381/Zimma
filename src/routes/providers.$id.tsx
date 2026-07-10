@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Star, MapPin, ShieldCheck, Briefcase, Clock, MessageCircle, Phone, Share2, ChevronLeft, CheckCircle2, Loader2 } from "lucide-react";
 import { Navbar } from "@/components/zimma/Navbar";
@@ -9,8 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import type { ProviderRow } from "@/components/zimma/auth-context";
+import { useAuth } from "@/components/zimma/auth-context";
 import { rowToProvider } from "@/components/zimma/provider-mapping";
 import { FavoriteButton } from "@/components/zimma/favorites";
+import { openConversationWithProvider } from "@/components/zimma/chat";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/providers/$id")({
   component: ProviderProfile,
@@ -37,8 +40,20 @@ const portfolio = [
 
 function ProviderProfile() {
   const { id } = Route.useParams();
+  const { authUser, user } = useAuth();
+  const navigate = useNavigate();
   const [row, setRow] = useState<ProviderRow | null | undefined>(undefined);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  const [messaging, setMessaging] = useState(false);
+
+  const startChat = async () => {
+    if (!authUser) { toast.error("Sign in to message pros"); navigate({ to: "/auth" }); return; }
+    if (user?.role === "provider") { toast.error("Providers can't message other providers"); return; }
+    setMessaging(true);
+    const convId = await openConversationWithProvider(id);
+    setMessaging(false);
+    if (convId) navigate({ to: "/dashboard/customer" });
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -86,8 +101,7 @@ function ProviderProfile() {
   return (
     <div className="min-h-screen">
       <Navbar />
-
-      <div className="absolute z-0 h-32 bg-primary-soft sm:h-48">
+      <div className="relative h-32 bg-primary-soft sm:h-48">
         <div className="absolute left-4 top-4 sm:left-8 sm:top-8">
           <Link to="/providers">
             <Button variant="secondary" size="sm" className="gap-1"><ChevronLeft className="h-4 w-4" /> Back</Button>
@@ -100,7 +114,7 @@ function ProviderProfile() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="-mt-10 grid gap-6 rounded-3xl border border-border bg-card p-5 shadow-card sm:-mt-16 sm:p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
+        <div className="-mt-20 relative z-10 grid gap-6 rounded-3xl border border-border bg-card p-5 shadow-card sm:-mt-14 sm:p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
           <img src={p.avatar} alt={p.name} className="h-24 w-24 rounded-2xl ring-4 ring-card sm:h-28 sm:w-28 lg:h-32 lg:w-32" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -128,7 +142,9 @@ function ProviderProfile() {
             <div className="text-2xl font-bold text-foreground">{p.price}</div>
             <div className="text-xs text-success">{p.available}</div>
             <div className="mt-2 flex gap-2">
-              <Button variant="outline" size="icon"><MessageCircle className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon" onClick={startChat} disabled={messaging} aria-label="Message pro">
+                {messaging ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+              </Button>
               <Button variant="outline" size="icon"><Phone className="h-4 w-4" /></Button>
               <Link to="/book" search={{ providerId: id }} className="flex-1"><Button size="lg" className="w-full shadow-glow">Book Now</Button></Link>
             </div>

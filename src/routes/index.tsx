@@ -1,22 +1,31 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Search, MapPin, ShieldCheck, Clock, Wallet, Star, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Search, MapPin, ShieldCheck, Clock, Wallet, Star, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 import { Navbar } from "@/components/zimma/Navbar";
 import { Footer } from "@/components/zimma/Footer";
 import { ServiceCard, ProviderCard, ReviewCard } from "@/components/zimma/cards";
-import { categories, providers, testimonials } from "@/components/zimma/data";
+import { categories } from "@/components/zimma/data";
 import { Reveal, CountUp } from "@/components/zimma/animations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useLiveHomeStats, useLiveTestimonials, useTopProviders } from "@/components/zimma/notification-center";
+import { rowToProvider } from "@/components/zimma/provider-mapping";
+import type { ProviderRow } from "@/components/zimma/auth-context";
 
 export const Route = createFileRoute("/")({
   component: Landing,
 });
 
 function Landing() {
+  const topProviderRows = useTopProviders(4);
+  const topProviders = (topProviderRows ?? []).map((r) => rowToProvider(r as ProviderRow));
+  const heroPro = topProviders[0];
+  const testimonials = useLiveTestimonials(3);
+  const stats = useLiveHomeStats();
   return (
     <div className="min-h-screen">
       <Navbar />
+
 
       {/* HERO */}
       <section className="hero-gradient relative overflow-hidden">
@@ -26,10 +35,10 @@ function Landing() {
               <ShieldCheck className="h-3.5 w-3.5" /> Karachi's most trusted home services
             </Badge>
             <h1 className="animate-fade-up text-4xl font-bold leading-[1.05] tracking-tight text-foreground sm:text-5xl md:text-6xl" style={{ animationDelay: "80ms" }}>
-              Book verified pros for <span className="bg-gradient-to-r from-primary to-success bg-clip-text text-transparent">every corner</span> of your home.
+              Book verified pros for <span className="bg-linear-to-r from-primary to-success bg-clip-text text-transparent">every corner</span> of your home.
             </h1>
             <p className="mt-5 max-w-xl animate-fade-up text-base text-muted-foreground sm:text-lg" style={{ animationDelay: "180ms" }}>
-              From DHA to North Nazimabad — Zimma connects you with background-checked electricians, plumbers, cleaners and more. Transparent prices. On-demand booking.
+              From Layari Town to North Nazimabad — Zimma connects you with background-checked electricians, plumbers, cleaners and more. Transparent prices. On-demand booking.
             </p>
 
             {/* Search */}
@@ -57,9 +66,9 @@ function Landing() {
             </div>
 
             <div className="mt-10 grid max-w-md grid-cols-3 gap-4 animate-fade-up" style={{ animationDelay: "440ms" }}>
-              <HeroStat value={52} suffix="K+" label="Customers" />
-              <HeroStat value={3800} suffix="+" label="Verified pros" />
-              <HeroStat value={180} suffix="K+" label="Jobs done" />
+              <HeroStat value={stats?.customers ?? 0} label="Customers" />
+              <HeroStat value={stats?.pros ?? 0} label="Verified pros" />
+              <HeroStat value={stats?.jobs ?? 0} label="Jobs done" />
             </div>
           </div>
 
@@ -71,18 +80,30 @@ function Landing() {
             <div className="relative grid grid-cols-2 gap-4">
               <div className="space-y-4">
                 <div className="glass-card animate-float rounded-3xl p-5 shadow-card">
-                  <div className="flex items-center gap-3">
-                    <img src={providers[0].avatar} alt="" className="h-12 w-12 rounded-xl" />
-                    <div>
-                      <p className="text-sm font-semibold">{providers[0].name}</p>
-                      <p className="text-xs text-muted-foreground">{providers[0].trade}</p>
+                  {heroPro ? (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <img src={heroPro.avatar} alt="" className="h-12 w-12 rounded-xl" />
+                        <div>
+                          <p className="text-sm font-semibold">{heroPro.name}</p>
+                          <p className="text-xs text-muted-foreground">{heroPro.trade}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center gap-1 text-xs">
+                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                        <span className="font-semibold">{heroPro.rating.toFixed(1)}</span>
+                        <span className="text-muted-foreground">· {heroPro.jobs} jobs</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-xl bg-muted animate-pulse" />
+                      <div className="space-y-1">
+                        <div className="h-3 w-24 rounded bg-muted animate-pulse" />
+                        <div className="h-3 w-16 rounded bg-muted animate-pulse" />
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-3 flex items-center gap-1 text-xs">
-                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                    <span className="font-semibold">4.9</span>
-                    <span className="text-muted-foreground">· 540 jobs</span>
-                  </div>
+                  )}
                   <Link to="/book"><Button size="sm" className="mt-4 w-full btn-glow">Book in 2 mins</Button></Link>
                 </div>
                 <div className="animate-float-slow rounded-3xl bg-foreground p-5 text-background shadow-card">
@@ -134,13 +155,21 @@ function Landing() {
         sub="Handpicked, verified, and loved by 50K+ Karachi households."
         action={<Link to="/providers"><Button variant="ghost" className="gap-1">See all pros <ArrowRight className="h-4 w-4" /></Button></Link>}
       >
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {providers.slice(0, 4).map((p, i) => (
-            <Reveal key={p.id} delay={i * 80}>
-              <ProviderCard p={p} />
-            </Reveal>
-          ))}
-        </div>
+        {topProviderRows === null ? (
+          <div className="flex justify-center py-10 text-muted-foreground"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        ) : topProviders.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-card/60 p-10 text-center text-sm text-muted-foreground">
+            No approved pros yet — new registrations appear here in real time.
+          </div>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {topProviders.map((p, i) => (
+              <Reveal key={p.id} delay={i * 80}>
+                <ProviderCard p={p} />
+              </Reveal>
+            ))}
+          </div>
+        )}
       </Section>
 
       {/* WHY ZIMMA */}
@@ -184,15 +213,17 @@ function Landing() {
       </Section>
 
       {/* TESTIMONIALS */}
-      <Section eyebrow="Loved across Karachi" title="What our customers say">
-        <div className="grid gap-5 md:grid-cols-3">
-          {testimonials.map((t, i) => (
-            <Reveal key={t.name} delay={i * 100}>
-              <ReviewCard {...t} />
-            </Reveal>
-          ))}
-        </div>
-      </Section>
+      {testimonials === null ? null : testimonials.length > 0 && (
+        <Section eyebrow="Loved across Karachi" title="What our customers say">
+          <div className="grid gap-5 md:grid-cols-3">
+            {testimonials.map((t, i) => (
+              <Reveal key={`${t.name}-${i}`} delay={i * 100}>
+                <ReviewCard {...t} />
+              </Reveal>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {/* STATS */}
       <section className="mx-auto mt-24 max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -201,10 +232,10 @@ function Landing() {
             <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-20 -left-10 h-72 w-72 rounded-full bg-success/20 blur-3xl" />
             <div className="relative grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-              <BigStat value={52} suffix="K+" label="Happy Customers" />
-              <BigStat value={3800} suffix="+" label="Verified Pros" />
-              <BigStat value={180} suffix="K+" label="Jobs Completed" />
-              <BigStat value={4.9} decimals={1} suffix=" ★" label="Avg. Rating" />
+              <BigStat value={stats?.customers ?? 0} label="Happy Customers" />
+              <BigStat value={stats?.pros ?? 0} label="Verified Pros" />
+              <BigStat value={stats?.jobs ?? 0} label="Jobs Completed" />
+              <BigStat value={stats?.rating ?? 0} decimals={1} suffix=" ★" label="Avg. Rating" />
             </div>
           </div>
         </Reveal>
