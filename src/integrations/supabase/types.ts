@@ -195,6 +195,12 @@ export type Database = {
           hourly_rate: number
           id: string
           is_online: boolean
+          kyc_document_path: string | null
+          kyc_document_type: string | null
+          kyc_notes: string | null
+          kyc_reviewed_at: string | null
+          kyc_status: Database["public"]["Enums"]["kyc_status"]
+          kyc_submitted_at: string | null
           name: string
           phone: string | null
           profession: string
@@ -218,6 +224,12 @@ export type Database = {
           hourly_rate?: number
           id: string
           is_online?: boolean
+          kyc_document_path?: string | null
+          kyc_document_type?: string | null
+          kyc_notes?: string | null
+          kyc_reviewed_at?: string | null
+          kyc_status?: Database["public"]["Enums"]["kyc_status"]
+          kyc_submitted_at?: string | null
           name: string
           phone?: string | null
           profession?: string
@@ -241,6 +253,12 @@ export type Database = {
           hourly_rate?: number
           id?: string
           is_online?: boolean
+          kyc_document_path?: string | null
+          kyc_document_type?: string | null
+          kyc_notes?: string | null
+          kyc_reviewed_at?: string | null
+          kyc_status?: Database["public"]["Enums"]["kyc_status"]
+          kyc_submitted_at?: string | null
           name?: string
           phone?: string | null
           profession?: string
@@ -328,6 +346,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_revoke_provider: { Args: { _user_id: string }; Returns: undefined }
+      admin_set_user_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: undefined
+      }
+      get_chat_customer_profiles: {
+        Args: { _ids: string[] }
+        Returns: {
+          email: string
+          id: string
+          name: string
+          phone: string
+        }[]
+      }
       get_or_create_conversation: {
         Args: { _provider_id: string }
         Returns: string
@@ -340,6 +375,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      provider_get_or_create_conversation: {
+        Args: { _customer_id: string }
+        Returns: string
+      }
+      recompute_provider_total_jobs: {
+        Args: { _provider_id: string }
+        Returns: undefined
+      }
+      send_conversation_message: {
+        Args: { _body: string; _conversation_id: string }
+        Returns: {
+          body: string
+          conversation_id: string
+          created_at: string
+          id: string
+          read_at: string | null
+          sender_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "messages"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       app_role: "admin" | "provider" | "customer"
@@ -350,6 +410,7 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "rejected"
+      kyc_status: "not_submitted" | "submitted" | "approved" | "rejected"
       provider_status: "pending" | "approved" | "rejected"
     }
     CompositeTypes: {
@@ -487,6 +548,7 @@ export const Constants = {
         "cancelled",
         "rejected",
       ],
+      kyc_status: ["not_submitted", "submitted", "approved", "rejected"],
       provider_status: ["pending", "approved", "rejected"],
     },
   },

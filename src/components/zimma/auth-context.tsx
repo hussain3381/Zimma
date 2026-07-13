@@ -22,6 +22,10 @@ export type ProviderRow = {
   is_online: boolean;
   status: "pending" | "approved" | "rejected";
   verified: boolean;
+  kyc_status?: "not_submitted" | "submitted" | "approved" | "rejected";
+  kyc_document_path?: string | null;
+  kyc_notes?: string | null;
+  kyc_submitted_at?: string | null;
 };
 
 export type ProviderApplication = {

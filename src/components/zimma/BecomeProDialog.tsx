@@ -58,7 +58,8 @@ export function BecomeProDialog({ open, onOpenChange }: { open: boolean; onOpenC
     toast.success("Application submitted! Verification pending.");
     onOpenChange(false);
     await refresh();
-    navigate({ to: "/auth/pending" });
+    // fix that ok
+    navigate({ to: "/auth-pending" });
   };
 
   return (
@@ -74,53 +75,84 @@ export function BecomeProDialog({ open, onOpenChange }: { open: boolean; onOpenC
         </DialogHeader>
 
         <form onSubmit={submit} className="mt-2 space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Profession</label>
-            <div className="relative">
-              <Briefcase className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <select
-                value={profession}
-                onChange={(e) => setProfession(e.target.value)}
-                className="w-full appearance-none rounded-xl border border-input bg-background py-2.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                {PROFESSIONS.map((p) => <option key={p}>{p}</option>)}
-              </select>
-            </div>
-          </div>
+  <div>
+    <label className="mb-1 block text-xs font-medium text-muted-foreground">Profession</label>
+    <div className="relative">
+      <Briefcase className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <select
+        value={profession}
+        onChange={(e) => setProfession(e.target.value)}
+        className="w-full appearance-none rounded-xl border border-input bg-background py-2.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+      >
+        <option value="" disabled>Select Profession</option>
+        {PROFESSIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+      </select>
+    </div>
+  </div>
 
-          <PField icon={Phone} label="Phone number" value={phone} onChange={setPhone} placeholder="+92 300 1234567" />
-          <PField icon={IdCard} label="CNIC number" value={cnic} onChange={(v) => setCnic(v.replace(/[^\d-]/g, ""))} placeholder="42101-1234567-1" />
-          <PField icon={MapPin} label="Service area" value={area} onChange={setArea} placeholder="DHA, Clifton, Gulshan" />
+  <PField 
+    icon={Phone} 
+    label="Phone number" 
+    value={phone} 
+    onChange={(v) => {
+      // Sirf numbers aur '+' allow karega, max limit 13 chars
+      let formatted = v.replace(/[^\d+]/g, "");
+      setPhone(formatted.slice(0, 13));
+    }} 
+    placeholder="+92 300 1234567" 
+  />
+  
+  <PField 
+    icon={IdCard} 
+    label="CNIC number" 
+    value={cnic} 
+    onChange={(v) => {
+      // Sirf 13 digits nikalega
+      const digits = v.replace(/\D/g, "").slice(0, 13);
+      // Auto dash formatting (XXXXX-XXXXXXX-X)
+      let formatted = digits;
+      if (digits.length > 5) {
+        formatted = `${digits.slice(0, 5)}-${digits.slice(5)}`;
+      }
+      if (digits.length > 12) {
+        formatted = `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+      }
+      setCnic(formatted);
+    }} 
+    placeholder="42101-1234567-1" 
+  />
+  
+  <PField icon={MapPin} label="Service area" value={area} onChange={setArea} placeholder="DHA, Clifton, Gulshan" />
 
-          <div className="grid grid-cols-2 gap-3">
-            <PField icon={Briefcase} label="Experience (years)" value={experience} onChange={setExperience} placeholder="5" />
-            <PField icon={Briefcase} label="Hourly rate (PKR)" value={hourlyRate} onChange={setHourlyRate} placeholder="800" />
-          </div>
+  <div className="grid grid-cols-2 gap-3">
+    <PField icon={Briefcase} label="Experience (years)" value={experience} onChange={setExperience} placeholder="5" />
+    <PField icon={Briefcase} label="Hourly rate (PKR)" value={hourlyRate} onChange={setHourlyRate} placeholder="800" />
+  </div>
 
-          <PField icon={Briefcase} label="Skills (comma separated)" value={skills} onChange={setSkills} placeholder="Wiring, MCB, Inverter" />
+  <PField icon={Briefcase} label="Skills (comma separated)" value={skills} onChange={setSkills} placeholder="Wiring, MCB, Inverter" />
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">About you</label>
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              rows={3}
-              placeholder="A short description customers will see on your profile."
-              className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
+  <div>
+    <label className="mb-1 block text-xs font-medium text-muted-foreground">About you</label>
+    <textarea
+      value={bio}
+      onChange={(e) => setBio(e.target.value)}
+      rows={3}
+      placeholder="A short description customers will see on your profile."
+      className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+    />
+  </div>
 
-          {error && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
-          )}
+  {error && (
+    <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
+  )}
 
-          <div className="flex gap-2 pt-1">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-            <Button type="submit" className="flex-1 gap-2 btn-glow" disabled={busy}>
-              {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Submitting…</> : "Submit application"}
-            </Button>
-          </div>
-        </form>
+  <div className="flex gap-2 pt-1">
+    <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+    <Button type="submit" className="flex-1 gap-2 btn-glow" disabled={busy}>
+      {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Submitting…</> : "Submit application"}
+    </Button>
+  </div>
+</form>
       </DialogContent>
     </Dialog>
   );

@@ -1,5 +1,11 @@
 export function SkeletonBlock({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded-xl bg-muted ${className}`} />;
+  return (
+    <div 
+      className={`animate-pulse rounded-xl 
+      bg-zinc-300/80 border border-gray-300/30 
+      dark:bg-zinc-800 ${className}`} 
+    />
+  );
 }
 
 export function AuthSkeleton() {

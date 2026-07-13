@@ -7,6 +7,9 @@ import { Card } from "@/components/ui/card";
 import { FavoriteButton } from "./favorites";
 import type { Provider } from "./data";
 import type { LucideIcon } from "lucide-react";
+import { UNVERIFIED_BOOK_MESSAGE } from "./provider-mapping";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ShieldAlert } from "lucide-react";
 
 export function ServiceCard({ icon: Icon, name, count, color, slug }: { icon: LucideIcon; name: string; count: number; color: string; slug: string }) {
   return (
@@ -99,9 +102,31 @@ export function ProviderCard({ p }: { p: Provider }) {
           <Link to="/providers/$id" params={{ id: p.id }}>
             <Button variant="outline" size="sm">Profile</Button>
           </Link>
-          <Link to="/book" search={{ providerId: p.id }}>
-            <Button size="sm" className="shadow-glow btn-glow">Book Now</Button>
-          </Link>
+          {p.bookable === false ? (
+            <TooltipProvider delayDuration={100}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    size="sm" 
+                    variant="secondary" 
+                    className="h-auto py-1.5 px-3 flex flex-col items-center justify-center gap-1 cursor-not-allowed opacity-70 text-center whitespace-normal" 
+                    disabled 
+                    aria-disabled
+                  >
+                    <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> 
+                    <span className="block max-w-[100px] break-words">
+                      Verification pending
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[240px] text-xs">{UNVERIFIED_BOOK_MESSAGE}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <Link to="/book" search={{ providerId: p.id }}>
+              <Button size="sm" className="shadow-glow btn-glow">Book Now</Button>
+            </Link>
+          )}
         </div>
       </div>
     </Card>

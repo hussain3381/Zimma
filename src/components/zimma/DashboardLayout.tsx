@@ -1,13 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Bell, Search, Sparkles, type LucideIcon } from "lucide-react";
-import { type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Logo } from "@/components/zimma/Logo";
 
 type NavItem = {
@@ -34,6 +29,25 @@ export function DashboardLayout({
 }) {
   const isActive = (n: NavItem) =>
     activeLabel ? n.label === activeLabel : !!n.active;
+  const notificationBadge =
+    nav.find((n) => n.label === "Notifications")?.badge ?? 0;
+  const mobileNavRef = useRef<HTMLElement>(null);
+
+  // Auto-scroll the active mobile tab into view so users can always see where they are.
+  useEffect(() => {
+    const container = mobileNavRef.current;
+    if (!container) return;
+    const active = container.querySelector<HTMLButtonElement>(
+      "[data-active='true']",
+    );
+    if (active) {
+      active.scrollIntoView({
+        behavior: "smooth",
+        inline: "center",
+        block: "nearest",
+      });
+    }
+  }, [activeLabel]);
 
   return (
     <div className="min-h-screen bg-muted/40">
@@ -42,7 +56,7 @@ export function DashboardLayout({
         <aside className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col">
           <Link to="/" className="flex items-center gap-2 px-6 py-5">
             <span className="flex h-9 items-center justify-center ">
-              <Logo className="text-white absolute left-2" />
+              <Logo className="[&_span]:hidden absolute left-2 " />
             </span>
           </Link>
 
@@ -93,7 +107,7 @@ export function DashboardLayout({
           <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-xl sm:gap-4 sm:px-6">
             <Link to="/" className="flex items-center gap-2 px-6 py-5">
               <span className="flex h-9 items-center justify-center ">
-                <Logo className="" />
+                <Logo className="[&_span]:max-[400px]:hidden" />
               </span>
             </Link>
 
@@ -105,39 +119,19 @@ export function DashboardLayout({
               />
             </div>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className="relative ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card transition hover:bg-accent sm:ml-0">
-                  <Bell className="h-4 w-4" />
-                  <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                sideOffset={8}
-                className="w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl border-border bg-popover p-2 shadow-card"
-              >
-                <p className="px-3 py-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                  Notifications
-                </p>
-                {[
-                  {
-                    t: "Booking confirmed",
-                    s: "Asif (Electrician) arriving 4 PM",
-                  },
-                  { t: "New review", s: "You received a 5★ from Ayesha" },
-                  { t: "Payment received", s: "PKR 3,200 credited to wallet" },
-                ].map((n) => (
-                  <div
-                    key={n.t}
-                    className="rounded-xl px-3 py-2.5 hover:bg-accent"
-                  >
-                    <p className="text-sm font-medium text-foreground">{n.t}</p>
-                    <p className="text-xs text-muted-foreground">{n.s}</p>
-                  </div>
-                ))}
-              </PopoverContent>
-            </Popover>
+            <button
+              type="button"
+              onClick={() => onSelect?.("Notifications")}
+              className="relative ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card transition hover:bg-accent sm:ml-0"
+              aria-label="Open notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {notificationBadge > 0 && (
+                <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                  {notificationBadge > 9 ? "9+" : notificationBadge}
+                </span>
+              )}
+            </button>
 
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <div className=" min-w-0 text-right ">
@@ -156,33 +150,75 @@ export function DashboardLayout({
 
           {/* Mobile bottom nav */}
           <nav
-            className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-border bg-background/95 px-2 pt-2 backdrop-blur lg:hidden"
+            className="fixed bottom-0 left-0 right-0 z-30 flex h-16 items-center justify-around border-t border-border bg-background/95 px-2 backdrop-blur lg:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.05)]"
             style={{
               paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))",
             }}
           >
-            {nav.slice(0, 5).map((n) => (
-              <button
-                key={n.label}
-                onClick={() => onSelect?.(n.label)}
-                className={`flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] transition-transform duration-300 hover:scale-125 ${isActive(n) ? "text-primary scale-115"  : "text-muted-foreground"}`}
-              >
-                <span className="relative">
-                  <n.icon className="h-4 w-4" />
-                  {!!n.badge && (
-                    <span className="absolute -right-2 -top-2 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
-                      {n.badge > 9 ? "9+" : n.badge}
-                    </span>
-                  )}
-                </span>
-                <span className="max-w-[64px] truncate">
-                  {n.label.split(" ")[0]}
-                </span>
-              </button>
-            ))}
-          </nav>
+            {/* MAGIC STEP: JavaScript se array ka order change kar rahe hain bina asal array ko chhede */}
+            {(() => {
+              // 1. Pehle hum 'Overview' item ko dhoondenge
+              const overviewItem = nav.find((n) => n.label === "Overview");
+              // 2. Baki ke saare items alag kar lenge (jisme overview na ho)
+              const otherItems = nav.filter((n) => n.label !== "Overview");
 
-          <main className="px-3 pb-28 pt-6 sm:px-6 lg:pb-10 lg:px-8">
+              // 3. Mobile ke liye hume top 4 dusre items chahiye taaki total 5 ban sakein
+              const mobileOthers = otherItems.slice(0, 4);
+
+              // 4. Ab hum new array banayenge jisme Overview bilkul beech (index 2) par hoga
+              const mobileNav = [...mobileOthers];
+              if (overviewItem) {
+                mobileNav.splice(2, 0, overviewItem); // Index 2 par Overview ko insert kar diya
+              }
+
+              // Ab is custom 5-item sorted array par loop chalega
+              return mobileNav.map((n) => {
+                const active = isActive(n);
+                return (
+                  <button
+                    key={n.label}
+                    onClick={() => onSelect?.(n.label)}
+                    className="relative flex h-full w-12 flex-col items-center justify-center transition-all duration-300 ease-out"
+                  >
+                    {/* Active Blue Floating Circle Design */}
+                    <div
+                      className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full transition-all duration-300 ease-out
+              ${
+                active
+                  ? "bg-blue-600 text-white -translate-y-4 shadow-md shadow-blue-600/30 scale-110"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+                    >
+                      <n.icon className="h-5 w-5 transition-transform duration-300" />
+
+                      {/* Badges Functionality */}
+                      {!!n.badge && (
+                        <span
+                          className={`absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground transition-all
+                ${active ? "bg-red-500 text-white" : ""}`}
+                        >
+                          {n.badge > 9 ? "9+" : n.badge}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Text Label */}
+                    <span
+                      className={`absolute bottom-1 max-w-16 truncate text-[10px] font-medium transition-all duration-300
+              ${
+                active
+                  ? "text-blue-600 opacity-100 translate-y-0.5"
+                  : "text-muted-foreground opacity-70"
+              }`}
+                    >
+                      {n.label.split(" ")[0]}
+                    </span>
+                  </button>
+                );
+              });
+            })()}
+          </nav>
+          <main className="px-3 pb-28 pt-6 sm:px-6 lg:pb-10 lg:px-8 relative">
             {children}
           </main>
         </div>

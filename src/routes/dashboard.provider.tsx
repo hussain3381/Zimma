@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Home, Calendar, Briefcase, Wallet, MessageSquare, Settings, Star, TrendingUp,
   Clock, CheckCircle2, ArrowDownToLine, User, Lock, IdCard, BadgeCheck, Pencil, Save, X, MapPin, Phone, Mail, Bell,
+  Upload, FileText, AlertCircle, Loader2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/zimma/DashboardLayout";
 import { CountUp } from "@/components/zimma/animations";
@@ -14,8 +15,11 @@ import { Switch } from "@/components/ui/switch";
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Area, AreaChart, BarChart, Bar } from "recharts";
 import { useAuth } from "@/components/zimma/auth-context";
 import { DashboardSkeleton } from "@/components/zimma/loaders";
-import { ChatInbox, useUnreadMessageCount } from "@/components/zimma/chat";
+import { ChatInbox, openConversationWithCustomer, useUnreadMessageCount } from "@/components/zimma/chat";
 import { NotificationsPanel as LiveNotificationsPanel, useNotificationBadge } from "@/components/zimma/notification-center";
+import { emitDashboardNav, subscribeDashboardNav } from "@/lib/dashboard-nav";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/dashboard/provider")({
   head: () => ({ meta: [{ title: "Provider Dashboard — Zimma" }] }),
@@ -29,7 +33,7 @@ function ProviderDashboardWrapper() {
     if (!ready) return;
     if (!user) { navigate({ to: "/auth", search: { role: "provider" } as never }); return; }
     if (user.role !== "provider") { navigate({ to: "/dashboard/customer" }); return; }
-    if (user.status !== "approved") { navigate({ to: "/auth/pending" }); return; }
+    if (user.status !== "approved") { navigate({ to: "/auth-pending" }); return; }
   }, [ready, user, navigate]);
   if (!ready || !user || user.role !== "provider" || user.status !== "approved") return <DashboardSkeleton />;
   return <ProviderDashboard />;
@@ -54,22 +58,24 @@ function useProviderBookings() {
     if (!authUser) { setRows([]); return; }
     let mounted = true;
     const load = async () => {
-      const { supabase } = await import("@/integrations/supabase/client");
       const { data } = await supabase.from("bookings").select("*")
         .eq("provider_id", authUser.id)
         .order("booking_date", { ascending: false });
       if (mounted) setRows((data ?? []) as BookingRow[]);
     };
     load();
-    let cleanup: (() => void) | undefined;
-    (async () => {
-      const { supabase } = await import("@/integrations/supabase/client");
-      const ch = supabase.channel(`bookings-prov-${authUser.id}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: `provider_id=eq.${authUser.id}` }, load)
-        .subscribe();
-      cleanup = () => { supabase.removeChannel(ch); };
-    })();
-    return () => { mounted = false; cleanup?.(); };
+    // Unique channel per mount avoids the "cannot add postgres_changes
+    // callbacks after subscribe()" error in StrictMode where the same-named
+    // channel handle is re-used across the double-mount before cleanup ran.
+    const ch = supabase
+      .channel(`bookings-prov-${authUser.id}-${Math.random().toString(36).slice(2, 8)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bookings", filter: `provider_id=eq.${authUser.id}` },
+        load,
+      )
+      .subscribe();
+    return () => { mounted = false; supabase.removeChannel(ch); };
   }, [authUser?.id]);
   return rows;
 }
@@ -85,18 +91,29 @@ const provStatusStyle: Record<BookingRow["status"], string> = {
 
 function ProviderDashboard() {
   const [tab, setTab] = useState("Overview");
+  const [focusConversationId, setFocusConversationId] = useState<string | undefined>();
+  const [focusBookingId, setFocusBookingId] = useState<string | undefined>();
+  const [focusToken, setFocusToken] = useState(0);
   const { user } = useAuth();
   const unread = useUnreadMessageCount();
   const notifCount = useNotificationBadge("provider");
-  const displayName = user?.role === "provider" ? user.name : "Asif Mehmood";
+  const displayName = user?.role === "provider" ? user.name : "Provider";
+
+  useEffect(() => subscribeDashboardNav((target) => {
+    setTab(target.tab);
+    setFocusConversationId(target.conversationId);
+    setFocusBookingId(target.bookingId);
+    setFocusToken(target.token ?? Date.now());
+  }), []);
+
   const nav = [
     { label: "Overview", icon: Home },
     { label: "Pro Profile", icon: BadgeCheck },
     { label: "Jobs", icon: Briefcase },
-    { label: "Calendar", icon: Calendar },
-    { label: "Earnings", icon: Wallet },
     { label: "Messages", icon: MessageSquare, badge: unread },
     { label: "Notifications", icon: Bell, badge: notifCount },
+    { label: "Calendar", icon: Calendar },
+    { label: "Earnings", icon: Wallet },
     { label: "Settings", icon: Settings },
   ];
 
@@ -105,10 +122,10 @@ function ProviderDashboard() {
 
       {tab === "Overview" && <OverviewPanel />}
       {tab === "Pro Profile" && <ProProfilePanel />}
-      {tab === "Jobs" && <JobsPanel />}
+      {tab === "Jobs" && <JobsPanel focusBookingId={focusBookingId} focusToken={focusToken} />}
       {tab === "Calendar" && <CalendarPanel />}
       {tab === "Earnings" && <EarningsPanel />}
-      {tab === "Messages" && <MessagesPanel />}
+      {tab === "Messages" && <MessagesPanel focusConversationId={focusConversationId} focusToken={focusToken} />}
       {tab === "Notifications" && <NotificationsTabPanel />}
       {tab === "Settings" && <SettingsPanel />}
     </DashboardLayout>
@@ -185,6 +202,7 @@ function ProProfilePanel() {
       name: form.name,
       profession: form.profession,
       phone: form.phone,
+      cnic: form.cnic || null,
       area: form.area,
       experience: Number(form.experience) || 0,
       hourly_rate: Number(form.hourly_rate) || 0,
@@ -193,8 +211,6 @@ function ProProfilePanel() {
       bio: form.bio,
       is_online: form.is_online,
     };
-    const { supabase } = await import("@/integrations/supabase/client");
-    const { toast } = await import("sonner");
     const { error } = await supabase.from("providers").update(patch).eq("id", provider.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -206,7 +222,6 @@ function ProProfilePanel() {
   const toggleOnline = async (val: boolean) => {
     if (!provider) return;
     setForm((f) => ({ ...f, is_online: val }));
-    const { supabase } = await import("@/integrations/supabase/client");
     await supabase.from("providers").update({ is_online: val }).eq("id", provider.id);
     await refresh();
   };
@@ -264,7 +279,14 @@ function ProProfilePanel() {
               <ProField editing={false} label="Email (read only)" icon={Mail} value={form.email} onChange={() => {}} disabled />
             </div>
             <div className="sm:col-span-2">
-              <ProField editing={false} label="CNIC Number (verified)" icon={IdCard} value={form.cnic} onChange={() => {}} disabled />
+              <ProField
+                editing={editing}
+                label={form.cnic ? "CNIC Number (verified)" : "CNIC Number"}
+                icon={IdCard}
+                value={form.cnic}
+                onChange={(v) => setForm({ ...form, cnic: v })}
+                disabled={!!provider?.cnic}
+              />
             </div>
           </div>
         </Card>
@@ -306,10 +328,19 @@ function ProProfilePanel() {
 
         <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6 lg:col-span-2">
           <h3 className="flex items-center gap-2 text-lg font-bold"><BadgeCheck className="h-4 w-4 text-success" /> Verification Status</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { l: "CNIC Verified", s: form.cnic || "Not provided", ok: !!form.cnic },
               { l: "Admin approval", s: provider?.status === "approved" ? "Approved" : "Pending", ok: provider?.status === "approved" },
+              {
+                l: "KYC document",
+                s:
+                  provider?.kyc_status === "approved" ? "Verified"
+                  : provider?.kyc_status === "submitted" ? "Under review"
+                  : provider?.kyc_status === "rejected" ? "Rejected — re-upload"
+                  : "Not submitted",
+                ok: provider?.kyc_status === "approved",
+              },
               { l: "Profile live", s: provider?.status === "approved" ? "Visible to customers" : "Hidden until approved", ok: provider?.status === "approved" },
             ].map((v) => (
               <div key={v.l} className={`flex items-start gap-3 rounded-2xl border p-3 ${v.ok ? "border-success/30 bg-success-soft/40" : "border-border bg-muted/40"}`}>
@@ -323,9 +354,141 @@ function ProProfilePanel() {
               </div>
             ))}
           </div>
+          <KycUploadCard />
         </Card>
       </div>
     </>
+  );
+}
+
+function KycUploadCard() {
+  const { user, refresh } = useAuth();
+  const provider = user?.role === "provider" ? user : null;
+  const [uploading, setUploading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  if (!provider) return null;
+  const status = provider.kyc_status ?? "not_submitted";
+  const notes = provider.kyc_notes ?? "";
+  const documentPath = provider.kyc_document_path ?? null;
+
+  const statusMeta: Record<string, { label: string; cls: string; icon: typeof CheckCircle2 }> = {
+    not_submitted: { label: "No document uploaded", cls: "bg-muted text-muted-foreground", icon: AlertCircle },
+    submitted: { label: "Under review by admin", cls: "bg-amber-100 text-amber-700", icon: Clock },
+    approved: { label: "Verified", cls: "bg-success-soft text-success", icon: CheckCircle2 },
+    rejected: { label: "Rejected — please re-upload", cls: "bg-destructive/10 text-destructive", icon: X },
+  };
+  const meta = statusMeta[status];
+
+  const onFile = async (file: File) => {
+    if (!provider) return;
+    if (file.size > 8 * 1024 * 1024) { toast.error("File must be under 8 MB"); return; }
+    const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+    if (!["jpg", "jpeg", "png", "pdf", "webp"].includes(ext)) {
+      toast.error("Only JPG/PNG/PDF/WEBP allowed"); return;
+    }
+    setUploading(true);
+    try {
+      const path = `${provider.id}/kyc-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("kyc-documents")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (upErr) throw upErr;
+      const patch: {
+        kyc_document_path: string;
+        kyc_document_type: string;
+        kyc_status: "submitted";
+        kyc_submitted_at: string;
+        kyc_notes: null;
+      } = {
+        kyc_document_path: path,
+        kyc_document_type: file.type,
+        kyc_status: "submitted",
+        kyc_submitted_at: new Date().toISOString(),
+        kyc_notes: null,
+      };
+      const { error: dbErr } = await supabase.from("providers").update(patch).eq("id", provider.id);
+      if (dbErr) throw dbErr;
+      toast.success("KYC document submitted — admin will review shortly.");
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const viewDocument = async () => {
+    if (!documentPath) return;
+    setPreviewing(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from("kyc-documents")
+        .createSignedUrl(documentPath, 60);
+      if (error || !data?.signedUrl) throw error ?? new Error("Could not open document");
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not open document");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 rounded-2xl border border-border bg-muted/30 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-soft text-primary">
+            <FileText className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold">KYC Document</p>
+            <p className="text-xs text-muted-foreground">Upload CNIC / ID card front and back or a scanned PDF.</p>
+          </div>
+        </div>
+        <Badge className={`rounded-full ${meta.cls}`}>
+          <meta.icon className="mr-1 h-3 w-3" /> {meta.label}
+        </Badge>
+      </div>
+      {notes && status === "rejected" && (
+        <p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+          Admin note: {notes}
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,application/pdf"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }}
+        />
+        {status !== "approved" && (
+          <Button size="sm" disabled={uploading || status === "submitted"}
+            onClick={() => inputRef.current?.click()} className="gap-1">
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {status === "not_submitted"
+              ? "Upload document"
+              : status === "rejected"
+              ? "Re-upload"
+              : "Under review"}
+          </Button>
+        )}
+        {documentPath && (
+          <Button size="sm" variant="outline" onClick={viewDocument} disabled={previewing} className="gap-1">
+            {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            View submitted document
+          </Button>
+        )}
+        {status === "submitted" && (
+          <p className="text-xs text-muted-foreground">Submitted {provider.kyc_submitted_at ? new Date(provider.kyc_submitted_at).toLocaleString() : ""} — waiting on admin approval.</p>
+        )}
+        {status === "approved" && (
+          <p className="text-xs text-success flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Verified — no action needed.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -341,10 +504,11 @@ function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: 
   );
 }
 
-function BookingJobRow({ b }: { b: BookingRow }) {
+function BookingJobRow({ b, highlight }: { b: BookingRow; highlight?: boolean }) {
   const { user } = useAuth();
   const providerId = user?.role === "provider" ? user.id : null;
   const [busy, setBusy] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
   const [status, setLocalStatus] = useState(b.status);
 
   useEffect(() => { setLocalStatus(b.status); }, [b.status]);
@@ -353,7 +517,6 @@ function BookingJobRow({ b }: { b: BookingRow }) {
     if (!providerId) return;
     setBusy(true);
     const { supabase } = await import("@/integrations/supabase/client");
-    const { toast } = await import("sonner");
     const { error } = await supabase.from("bookings").update({ status: next }).eq("id", b.id).eq("provider_id", providerId);
     setBusy(false);
     if (error) { toast.error(error.message); return; }
@@ -361,8 +524,18 @@ function BookingJobRow({ b }: { b: BookingRow }) {
     toast.success(`Booking marked ${next.replace("_", " ")}`);
   };
 
+  const messageCustomer = async () => {
+    if (!providerId) return;
+    setChatBusy(true);
+    const convId = await openConversationWithCustomer(b.customer_id);
+    setChatBusy(false);
+    if (!convId) return;
+    emitDashboardNav({ tab: "Messages", conversationId: convId });
+    toast.success("Opening customer chat");
+  };
+
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-border p-3 sm:gap-4 sm:p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+    <div data-booking-id={b.id} className={`grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-2xl border p-3 transition sm:gap-4 sm:p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${highlight ? "border-primary ring-2 ring-primary/30" : "border-border"}`}>
       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
         <Briefcase className="h-5 w-5" />
       </div>
@@ -376,6 +549,10 @@ function BookingJobRow({ b }: { b: BookingRow }) {
       </div>
       <div className="col-span-2 flex items-center justify-between gap-2 border-t border-border/60 pt-3 sm:col-span-1 sm:flex-col sm:items-end sm:border-0 sm:pt-0 sm:text-right">
         <p className="font-semibold">PKR {b.price}</p>
+        <Button size="sm" variant="outline" disabled={chatBusy} className="gap-1 sm:mt-2" onClick={messageCustomer}>
+          {chatBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+          Message
+        </Button>
         {status === "pending" && (
           <div className="flex gap-2 sm:mt-2">
             <Button size="sm" variant="outline" disabled={busy} onClick={() => setStatus("rejected")}>Decline</Button>
@@ -486,9 +663,11 @@ function OverviewPanel() {
   );
 }
 
-function JobsPanel() {
+function JobsPanel({ focusBookingId, focusToken }: { focusBookingId?: string; focusToken?: number }) {
   const bookings = useProviderBookings();
   const [filter, setFilter] = useState<"all" | BookingRow["status"]>("all");
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const filters: { key: "all" | BookingRow["status"]; label: string }[] = [
     { key: "all", label: "All" },
     { key: "pending", label: "Pending" },
@@ -497,6 +676,20 @@ function JobsPanel() {
     { key: "completed", label: "Completed" },
   ];
   const list = (bookings ?? []).filter((b) => filter === "all" ? true : b.status === filter);
+
+  useEffect(() => {
+    if (!focusBookingId || !bookings) return;
+    const target = bookings.find((b) => b.id === focusBookingId);
+    if (!target) return;
+    if (filter !== "all" && target.status !== filter) setFilter("all");
+    const t = window.setTimeout(() => {
+      const el = containerRef.current?.querySelector<HTMLDivElement>(`[data-booking-id="${focusBookingId}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightId(focusBookingId);
+    }, 80);
+    const clear = window.setTimeout(() => setHighlightId(null), 2600);
+    return () => { window.clearTimeout(t); window.clearTimeout(clear); };
+  }, [focusBookingId, focusToken, bookings, filter]);
 
   return (
     <>
@@ -510,7 +703,7 @@ function JobsPanel() {
             </button>
           ))}
         </div>
-        <div className="mt-5 space-y-3">
+        <div ref={containerRef} className="mt-5 space-y-3">
           {bookings === null ? (
             <div className="flex justify-center py-10 text-muted-foreground"><Clock className="h-5 w-5 animate-pulse" /></div>
           ) : list.length === 0 ? (
@@ -518,7 +711,7 @@ function JobsPanel() {
               No jobs in this bucket.
             </div>
           ) : (
-            list.map((b) => <BookingJobRow key={b.id} b={b} />)
+            list.map((b) => <BookingJobRow key={b.id} b={b} highlight={highlightId === b.id} />)
           )}
         </div>
       </Card>
@@ -527,36 +720,50 @@ function JobsPanel() {
 }
 
 function CalendarPanel() {
-  const week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const today = new Date().getDay();
+  const bookings = useProviderBookings();
+  const todayDate = new Date();
+  const start = new Date(todayDate);
+  start.setDate(todayDate.getDate() - ((todayDate.getDay() + 6) % 7));
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
+  const todayKey = todayDate.toDateString();
+  const scheduled = (bookings ?? []).filter((b) => ["pending", "confirmed", "in_progress"].includes(b.status));
+  const todayJobs = scheduled
+    .filter((b) => new Date(b.booking_date).toDateString() === todayKey)
+    .sort((a, b) => +new Date(a.booking_date) - +new Date(b.booking_date));
   return (
     <>
-      <SectionHeader title="Calendar" subtitle="Your week, at a glance." action={<Button variant="outline" size="sm">Set availability</Button>} />
+      <SectionHeader title="Calendar" subtitle="Your live booking schedule." action={<Button variant="outline" size="sm">Set availability</Button>} />
       <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
         <div className="grid grid-cols-7 gap-2">
-          {week.map((d, i) => (
-            <button key={d} className={`flex flex-col items-center rounded-xl p-2 text-xs transition sm:p-3 ${i === (today === 0 ? 6 : today - 1) ? "bg-primary text-primary-foreground shadow-glow" : "bg-muted text-foreground hover:bg-accent"}`}>
-              <span className="opacity-80">{d}</span>
-              <span className="mt-1 text-base font-bold sm:text-xl">{15 + i}</span>
-              {(i === 1 || i === 3 || i === 5) && <span className={`mt-1 h-1 w-1 rounded-full ${i === (today === 0 ? 6 : today - 1) ? "bg-white" : "bg-primary"}`} />}
+          {days.map((d) => {
+            const count = scheduled.filter((b) => new Date(b.booking_date).toDateString() === d.toDateString()).length;
+            const isToday = d.toDateString() === todayKey;
+            return (
+            <button key={d.toISOString()} className={`flex flex-col items-center rounded-xl p-2 text-xs transition sm:p-3 ${isToday ? "bg-primary text-primary-foreground shadow-glow" : "bg-muted text-foreground hover:bg-accent"}`}>
+              <span className="opacity-80">{d.toLocaleDateString([], { weekday: "short" })}</span>
+              <span className="mt-1 text-base font-bold sm:text-xl">{d.getDate()}</span>
+              {count > 0 && <span className={`mt-1 rounded-full px-1.5 text-[10px] ${isToday ? "bg-white/20 text-white" : "bg-primary-soft text-primary"}`}>{count}</span>}
             </button>
-          ))}
+          );})}
         </div>
         <div className="mt-6 space-y-2">
           <h3 className="text-sm font-semibold text-muted-foreground">Today's schedule</h3>
-          {[
-            { t: "10:00 AM", s: "Wiring inspection · DHA Phase 5", c: "Mr. Hassan" },
-            { t: "1:30 PM", s: "Geyser repair · Clifton", c: "Mrs. Khan" },
-            { t: "4:00 PM", s: "Inverter setup · Gulshan", c: "Mr. Bilal" },
-            { t: "6:30 PM", s: "MCB replacement · Clifton", c: "Mrs. Sana" },
-          ].map((s) => (
-            <div key={s.t} className="flex items-center gap-3 rounded-xl border border-border p-3 sm:p-4">
-              <span className="shrink-0 text-xs font-semibold text-primary sm:text-sm">{s.t}</span>
+          {bookings === null ? (
+            <div className="flex justify-center py-8 text-muted-foreground"><Clock className="h-5 w-5 animate-pulse" /></div>
+          ) : todayJobs.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">No jobs scheduled for today.</div>
+          ) : todayJobs.map((job) => (
+            <div key={job.id} className="flex items-center gap-3 rounded-xl border border-border p-3 sm:p-4">
+              <span className="shrink-0 text-xs font-semibold text-primary sm:text-sm">{new Date(job.booking_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{s.s}</p>
-                <p className="truncate text-xs text-muted-foreground">{s.c}</p>
+                <p className="truncate text-sm font-medium">{job.service_type}</p>
+                <p className="truncate text-xs text-muted-foreground">{job.address ?? "Address pending"}</p>
               </div>
-              <Button size="sm" variant="outline">View</Button>
+              <Badge className={`rounded-full ${provStatusStyle[job.status]}`}>{job.status.replace("_", " ")}</Badge>
             </div>
           ))}
         </div>
@@ -566,23 +773,36 @@ function CalendarPanel() {
 }
 
 function EarningsPanel() {
-  const monthly = [
-    { d: "Jan", v: 92 }, { d: "Feb", v: 110 }, { d: "Mar", v: 134 },
-    { d: "Apr", v: 121 }, { d: "May", v: 156 }, { d: "Jun", v: 184 },
-  ];
+  const bookings = useProviderBookings();
+  const completed = (bookings ?? []).filter((b) => b.status === "completed");
+  const monthly = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 6 }, (_, index) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      const total = completed
+        .filter((b) => {
+          const date = new Date(b.booking_date);
+          return date.getMonth() === d.getMonth() && date.getFullYear() === d.getFullYear();
+        })
+        .reduce((sum, b) => sum + (b.price ?? 0), 0);
+      return { d: d.toLocaleDateString([], { month: "short" }), v: Math.round(total / 1000), raw: total };
+    });
+  }, [completed]);
+  const thisMonth = monthly.at(-1)?.raw ?? 0;
+  const lifetime = completed.reduce((sum, b) => sum + (b.price ?? 0), 0);
   return (
     <>
-      <SectionHeader title="Earnings" subtitle="Track payouts and trends." action={<Button className="gap-2"><ArrowDownToLine className="h-4 w-4" /> Withdraw</Button>} />
+      <SectionHeader title="Earnings" subtitle="Track completed-job earnings from live bookings." action={<Button className="gap-2"><ArrowDownToLine className="h-4 w-4" /> Withdraw</Button>} />
       <div className="grid gap-4 sm:grid-cols-3">
         {[
-          { l: "This month", v: "PKR 184,200", c: "bg-primary-soft text-primary" },
-          { l: "Pending payout", v: "PKR 22,400", c: "bg-amber-50 text-amber-600" },
-          { l: "Lifetime", v: "PKR 1.42M", c: "bg-success-soft text-success" },
+          { l: "This month", v: `PKR ${thisMonth.toLocaleString()}`, c: "bg-primary-soft text-primary" },
+          { l: "Completed jobs", v: `${completed.length}`, c: "bg-amber-50 text-amber-600" },
+          { l: "Lifetime", v: `PKR ${lifetime.toLocaleString()}`, c: "bg-success-soft text-success" },
         ].map((s) => (
           <Card key={s.l} className="rounded-2xl border-border bg-card p-5 shadow-soft">
             <p className="text-xs text-muted-foreground">{s.l}</p>
             <p className="mt-1 text-2xl font-bold">{s.v}</p>
-            <div className={`mt-3 inline-flex rounded-full px-2 py-0.5 text-xs ${s.c}`}>+18.2%</div>
+            <div className={`mt-3 inline-flex rounded-full px-2 py-0.5 text-xs ${s.c}`}>Live</div>
           </Card>
         ))}
       </div>
@@ -603,20 +823,20 @@ function EarningsPanel() {
       </Card>
 
       <Card className="mt-6 rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
-        <h2 className="text-lg font-bold">Recent payouts</h2>
+        <h2 className="text-lg font-bold">Recent completed jobs</h2>
         <div className="mt-4 space-y-2">
-          {[
-            { d: "10 Jun 2026", a: "PKR 34,800", s: "Paid" },
-            { d: "03 Jun 2026", a: "PKR 28,200", s: "Paid" },
-            { d: "27 May 2026", a: "PKR 41,500", s: "Paid" },
-          ].map((p) => (
-            <div key={p.d} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 sm:p-4">
+          {bookings === null ? (
+            <div className="flex justify-center py-8 text-muted-foreground"><Clock className="h-5 w-5 animate-pulse" /></div>
+          ) : completed.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">Completed jobs will appear here.</div>
+          ) : completed.slice(0, 5).map((p) => (
+            <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 sm:p-4">
               <div className="min-w-0">
-                <p className="text-sm font-medium">{p.d}</p>
-                <p className="text-xs text-muted-foreground">JazzCash · ending 8821</p>
+                <p className="text-sm font-medium">{p.service_type}</p>
+                <p className="text-xs text-muted-foreground">{new Date(p.booking_date).toLocaleDateString()} · {p.address ?? "No address"}</p>
               </div>
-              <p className="shrink-0 font-semibold">{p.a}</p>
-              <Badge className="rounded-full bg-success-soft text-success hover:bg-success-soft">{p.s}</Badge>
+              <p className="shrink-0 font-semibold">PKR {p.price.toLocaleString()}</p>
+              <Badge className="rounded-full bg-success-soft text-success hover:bg-success-soft">Completed</Badge>
             </div>
           ))}
         </div>
@@ -625,17 +845,53 @@ function EarningsPanel() {
   );
 }
 
-function MessagesPanel() {
+function MessagesPanel({ focusConversationId, focusToken }: { focusConversationId?: string; focusToken?: number }) {
   return (
     <>
       <SectionHeader title="Messages" subtitle="Chat with your customers in real time." />
-      <ChatInbox role="provider" />
+      <ChatInbox role="provider" focusConversationId={focusConversationId} focusToken={focusToken} />
     </>
   );
 }
 
 
 function SettingsPanel() {
+  const { user, refresh } = useAuth();
+  const provider = user?.role === "provider" ? user : null;
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: provider?.name ?? "",
+    profession: provider?.profession ?? "",
+    area: provider?.area ?? "",
+  });
+
+  useEffect(() => {
+    setForm({
+      name: provider?.name ?? "",
+      profession: provider?.profession ?? "",
+      area: provider?.area ?? "",
+    });
+  }, [provider?.name, provider?.profession, provider?.area]);
+
+  const save = async () => {
+    if (!provider) return;
+    if (!form.name.trim() || !form.profession.trim() || !form.area.trim()) {
+      toast.error("Please complete your display name, trade, and service area.");
+      return;
+    }
+    setSaving(true);
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { error } = await supabase.from("providers").update({
+      name: form.name.trim(),
+      profession: form.profession.trim(),
+      area: form.area.trim(),
+    }).eq("id", provider.id);
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Provider settings saved");
+    await refresh();
+  };
+
   return (
     <>
       <SectionHeader title="Settings" subtitle="Profile, services and notification preferences." />
@@ -643,10 +899,10 @@ function SettingsPanel() {
         <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
           <h2 className="flex items-center gap-2 text-lg font-bold"><User className="h-4 w-4" /> Pro profile</h2>
           <div className="mt-4 space-y-3">
-            <div><label className="text-xs text-muted-foreground">Display name</label><Input defaultValue="Asif Mehmood" className="mt-1 rounded-xl" /></div>
-            <div><label className="text-xs text-muted-foreground">Trade</label><Input defaultValue="Master Electrician" className="mt-1 rounded-xl" /></div>
-            <div><label className="text-xs text-muted-foreground">Service area</label><Input defaultValue="DHA, Clifton, Gulshan" className="mt-1 rounded-xl" /></div>
-            <Button className="w-full sm:w-auto">Save changes</Button>
+            <div><label className="text-xs text-muted-foreground">Display name</label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 rounded-xl" /></div>
+            <div><label className="text-xs text-muted-foreground">Trade</label><Input value={form.profession} onChange={(e) => setForm({ ...form, profession: e.target.value })} className="mt-1 rounded-xl" /></div>
+            <div><label className="text-xs text-muted-foreground">Service area</label><Input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="mt-1 rounded-xl" /></div>
+            <Button onClick={save} disabled={saving} className="w-full sm:w-auto">{saving ? "Saving…" : "Save changes"}</Button>
           </div>
         </Card>
 

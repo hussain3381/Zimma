@@ -10,9 +10,10 @@ import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import type { ProviderRow } from "@/components/zimma/auth-context";
 import { useAuth } from "@/components/zimma/auth-context";
-import { rowToProvider } from "@/components/zimma/provider-mapping";
+import { rowToProvider, isProviderBookable, UNVERIFIED_BOOK_MESSAGE } from "@/components/zimma/provider-mapping";
 import { FavoriteButton } from "@/components/zimma/favorites";
 import { openConversationWithProvider } from "@/components/zimma/chat";
+import { emitDashboardNav } from "@/lib/dashboard-nav";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/providers/$id")({
@@ -52,7 +53,10 @@ function ProviderProfile() {
     setMessaging(true);
     const convId = await openConversationWithProvider(id);
     setMessaging(false);
-    if (convId) navigate({ to: "/dashboard/customer" });
+    if (convId) {
+      emitDashboardNav({ tab: "Messages", conversationId: convId });
+      navigate({ to: "/dashboard/customer" });
+    }
   };
 
   useEffect(() => {
@@ -97,6 +101,7 @@ function ProviderProfile() {
   }
   if (row === null) throw notFound();
   const p = rowToProvider(row);
+  const bookable = isProviderBookable(row);
 
   return (
     <div className="min-h-screen">
@@ -146,10 +151,22 @@ function ProviderProfile() {
                 {messaging ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
               </Button>
               <Button variant="outline" size="icon"><Phone className="h-4 w-4" /></Button>
-              <Link to="/book" search={{ providerId: id }} className="flex-1"><Button size="lg" className="w-full shadow-glow">Book Now</Button></Link>
+              {bookable ? (
+                <Link to="/book" search={{ providerId: id }} className="flex-1"><Button size="lg" className="w-full shadow-glow">Book Now</Button></Link>
+              ) : (
+                <Button size="lg" variant="secondary" className="flex-1 cursor-not-allowed opacity-70" disabled title={UNVERIFIED_BOOK_MESSAGE}>
+                  Verification pending
+                </Button>
+              )}
             </div>
           </div>
         </div>
+        {!bookable && (
+          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>{UNVERIFIED_BOOK_MESSAGE}</p>
+          </div>
+        )}
 
         <div className="mt-8 grid gap-8 lg:grid-cols-3">
           <div className="space-y-8 lg:col-span-2">
@@ -231,8 +248,17 @@ function ProviderProfile() {
                   </button>
                 ))}
               </div>
-              <Link to="/book" search={{ providerId: id }}><Button size="lg" className="mt-5 w-full shadow-glow">Book Now</Button></Link>
-              <p className="mt-3 text-center text-[11px] text-muted-foreground">Free cancellation up to 2 hours before</p>
+              {bookable ? (
+                <>
+                  <Link to="/book" search={{ providerId: id }}><Button size="lg" className="mt-5 w-full shadow-glow">Book Now</Button></Link>
+                  <p className="mt-3 text-center text-[11px] text-muted-foreground">Free cancellation up to 2 hours before</p>
+                </>
+              ) : (
+                <>
+                  <Button size="lg" variant="secondary" className="mt-5 w-full cursor-not-allowed opacity-70" disabled>Verification pending</Button>
+                  <p className="mt-3 text-center text-[11px] text-muted-foreground">{UNVERIFIED_BOOK_MESSAGE}</p>
+                </>
+              )}
             </Card>
           </aside>
         </div>

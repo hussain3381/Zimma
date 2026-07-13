@@ -16,7 +16,7 @@ import { Reveal } from "@/components/zimma/animations";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/components/zimma/auth-context";
 import type { ProviderRow } from "@/components/zimma/auth-context";
-import { rowToProvider } from "@/components/zimma/provider-mapping";
+import { rowToProvider, isProviderBookable, UNVERIFIED_BOOK_MESSAGE } from "@/components/zimma/provider-mapping";
 import { toast } from "sonner";
 
 type BookSearch = { providerId?: string };
@@ -34,7 +34,8 @@ export const Route = createFileRoute("/book")({
   component: BookingFlow,
 });
 
-const STEPS = ["Service", "Provider", "Date", "Time", "Address", "Confirm"] as const;
+const FULL_STEPS = ["Service", "Provider", "Date", "Time", "Address", "Confirm"] as const;
+const LOCKED_STEPS = ["Date", "Time", "Address", "Confirm"] as const;
 const TIMES = ["09:00 AM", "10:30 AM", "12:00 PM", "01:30 PM", "03:00 PM", "04:30 PM", "06:00 PM"];
 
 function toIsoDateTime(dateLabel: string, timeLabel: string, dates: { iso: string; weekday: string; date: string }[]): string {
@@ -56,7 +57,12 @@ function BookingFlow() {
   const { providerId: initialProviderId } = Route.useSearch();
   const { authUser } = useAuth();
 
-  const [step, setStep] = useState(initialProviderId ? 0 : 0);
+  // When a specific provider was preselected (from a "Book Now" link on
+  // their profile / card), collapse the flow to the four remaining steps —
+  // service and pro-picker are already implied.
+  const locked = !!initialProviderId;
+  const STEPS = locked ? LOCKED_STEPS : FULL_STEPS;
+  const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -78,6 +84,12 @@ function BookingFlow() {
   }, []);
 
   const providerRow = providers?.find((p) => p.id === providerId) ?? null;
+  const bookableProviders = useMemo(
+    () => (providers ?? []).filter(isProviderBookable),
+    [providers],
+  );
+  const preselectedBlocked =
+    locked && providers !== null && providerRow !== null && !isProviderBookable(providerRow);
 
   // When a providerId is prefilled, auto-select matching service category if we can.
   useEffect(() => {
@@ -106,14 +118,21 @@ function BookingFlow() {
     return out;
   }, []);
 
-  const canNext = [
+  const canNextFull = [
     !!serviceSlug,
     !!providerId,
     !!date,
     !!time,
     address.line.length > 3,
     true,
-  ][step];
+  ];
+  const canNextLocked = [
+    !!date,
+    !!time,
+    address.line.length > 3,
+    true,
+  ];
+  const canNext = (locked ? canNextLocked : canNextFull)[step];
 
   async function submitBooking() {
     if (!authUser) {
@@ -122,6 +141,10 @@ function BookingFlow() {
       return;
     }
     if (!providerRow || !date || !time || !service) return;
+    if (!isProviderBookable(providerRow)) {
+      toast.error(UNVERIFIED_BOOK_MESSAGE);
+      return;
+    }
     setSubmitting(true);
     const bookingDateIso = toIsoDateTime(date, time, dates);
     const fullAddress = `${address.label} — ${address.line}, ${address.area}${address.notes ? ` (${address.notes})` : ""}`;
@@ -190,6 +213,26 @@ function BookingFlow() {
     );
   }
 
+  if (preselectedBlocked) {
+    return (
+      <div className="min-h-screen">
+        <Navbar />
+        <div className="mx-auto max-w-2xl px-4 py-20 text-center sm:px-6">
+          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <ShieldCheck className="h-10 w-10" />
+          </div>
+          <h1 className="text-3xl font-bold sm:text-4xl">This pro isn't accepting bookings yet</h1>
+          <p className="mt-3 text-muted-foreground">{UNVERIFIED_BOOK_MESSAGE}</p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Link to="/providers"><Button size="lg" className="shadow-glow btn-glow">Browse verified pros</Button></Link>
+            <Link to="/"><Button variant="outline" size="lg">Back home</Button></Link>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       <Navbar />
@@ -237,7 +280,7 @@ function BookingFlow() {
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_360px]">
           <Card key={step} className="animate-fade-up rounded-3xl border-border bg-card p-6 shadow-soft sm:p-8">
-            {step === 0 && (
+            {STEPS[step] === "Service" && (
               <>
                 <h2 className="text-lg font-bold">What do you need help with?</h2>
                 <p className="text-sm text-muted-foreground">Pick the service category — we'll match you with the best pros in your area.</p>
@@ -266,17 +309,17 @@ function BookingFlow() {
               </>
             )}
 
-            {step === 1 && (
+            {STEPS[step] === "Provider" && (
               <>
                 <h2 className="text-lg font-bold">Choose a professional</h2>
-                <p className="text-sm text-muted-foreground">Verified pros currently live on Zimma.</p>
+                <p className="text-sm text-muted-foreground">Fully-verified pros ready to accept bookings.</p>
                 {providers === null ? (
                   <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-                ) : providers.length === 0 ? (
-                  <p className="mt-6 rounded-2xl border border-dashed border-border bg-muted/40 p-6 text-center text-sm text-muted-foreground">No approved pros available yet.</p>
+                ) : bookableProviders.length === 0 ? (
+                  <p className="mt-6 rounded-2xl border border-dashed border-border bg-muted/40 p-6 text-center text-sm text-muted-foreground">No fully-verified pros available yet — check back soon.</p>
                 ) : (
                   <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    {providers.map((row) => {
+                    {bookableProviders.map((row) => {
                       const p = rowToProvider(row);
                       const selected = providerId === p.id;
                       return (
@@ -310,7 +353,7 @@ function BookingFlow() {
               </>
             )}
 
-            {step === 2 && (
+            {STEPS[step] === "Date" && (
               <>
                 <h2 className="text-lg font-bold">Pick a date</h2>
                 <p className="text-sm text-muted-foreground">Choose when you'd like the pro to arrive.</p>
@@ -334,7 +377,7 @@ function BookingFlow() {
               </>
             )}
 
-            {step === 3 && (
+            {STEPS[step] === "Time" && (
               <>
                 <h2 className="text-lg font-bold">Choose a time slot</h2>
                 <p className="text-sm text-muted-foreground">All times are PKT — your pro arrives within a 30-minute window.</p>
@@ -357,7 +400,7 @@ function BookingFlow() {
               </>
             )}
 
-            {step === 4 && (
+            {STEPS[step] === "Address" && (
               <>
                 <h2 className="text-lg font-bold">Where should we send your pro?</h2>
                 <p className="text-sm text-muted-foreground">Provide a complete address so the pro can reach you on time.</p>
@@ -409,7 +452,7 @@ function BookingFlow() {
               </>
             )}
 
-            {step === 5 && (
+            {STEPS[step] === "Confirm" && (
               <>
                 <h2 className="text-lg font-bold">Review your booking</h2>
                 <p className="text-sm text-muted-foreground">Make sure everything looks right before confirming.</p>

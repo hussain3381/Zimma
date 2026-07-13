@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Bell, Calendar, Star, MessageSquare, Heart, CheckCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./auth-context";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { emitDashboardNav } from "@/lib/dashboard-nav";
 
 export type Notification = {
   id: string;
@@ -15,11 +16,16 @@ export type Notification = {
   body: string;
   created_at: string;
   read: boolean;
+  /** deep-link targets: which dashboard tab to open, and the entity to focus */
+  targetTab?: string;
+  conversationId?: string;
+  bookingId?: string;
 };
 
 type Prefs = { toasts: boolean; bookings: boolean; messages: boolean; reviews: boolean };
 const PREF_KEY = "zimma:notif-prefs";
 const READ_KEY = "zimma:notif-read";
+const READ_EVENT = "zimma:notif-read-changed";
 
 const iconFor = (k: Notification["kind"]) =>
   k === "booking" ? Calendar : k === "review" ? Star : k === "message" ? MessageSquare : Heart;
@@ -44,6 +50,7 @@ function loadReadIds(): Set<string> {
 
 function persistReadIds(set: Set<string>) {
   try { localStorage.setItem(READ_KEY, JSON.stringify(Array.from(set).slice(-500))); } catch {/* ignore */}
+  try { window.setTimeout(() => window.dispatchEvent(new CustomEvent(READ_EVENT)), 0); } catch {/* ignore */}
 }
 
 /**
@@ -55,8 +62,28 @@ export function useNotifications(role: "customer" | "provider") {
   const [items, setItems] = useState<Notification[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => loadReadIds());
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
+  // Unique per hook-instance so multiple mounts (badge + panel, StrictMode double-invoke)
+  // don't collide on the same realtime channel name — that collision throws
+  // "cannot add postgres_changes callbacks after subscribe()" and crashes the tab.
+  const instanceIdRef = useRef<string>(Math.random().toString(36).slice(2, 10));
+  const iid = instanceIdRef.current;
 
   useEffect(() => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {/* ignore */} }, [prefs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncReadState = () => {
+      const next = loadReadIds();
+      setReadIds(next);
+      setItems((prev) => prev.map((n) => ({ ...n, read: next.has(n.id) })));
+    };
+    window.addEventListener(READ_EVENT, syncReadState);
+    window.addEventListener("storage", syncReadState);
+    return () => {
+      window.removeEventListener(READ_EVENT, syncReadState);
+      window.removeEventListener("storage", syncReadState);
+    };
+  }, []);
 
   const push = useCallback((n: Omit<Notification, "read">) => {
     setItems((prev) => {
@@ -73,7 +100,7 @@ export function useNotifications(role: "customer" | "provider") {
       const filterCol = role === "customer" ? "customer_id" : "provider_id";
       const [bk, rv] = await Promise.all([
         supabase.from("bookings").select("id, service_type, status, booking_date, created_at").eq(filterCol, authUser.id).order("created_at", { ascending: false }).limit(15),
-        supabase.from("reviews").select("id, rating, comment, created_at, provider_id, customer_id").eq(role === "provider" ? "provider_id" : "customer_id", authUser.id).order("created_at", { ascending: false }).limit(10),
+        supabase.from("reviews").select("id, rating, comment, created_at, provider_id, customer_id, booking_id").eq(role === "provider" ? "provider_id" : "customer_id", authUser.id).order("created_at", { ascending: false }).limit(10),
       ]);
       if (!mounted) return;
       const notifs: Notification[] = [];
@@ -84,6 +111,8 @@ export function useNotifications(role: "customer" | "provider") {
         body: `${b.service_type} · ${new Date(b.booking_date).toLocaleString()}`,
         created_at: b.created_at,
         read: false,
+        targetTab: role === "provider" ? "Jobs" : "Bookings",
+        bookingId: b.id,
       }));
       (rv.data ?? []).forEach((r) => notifs.push({
         id: `review:${r.id}`,
@@ -92,6 +121,9 @@ export function useNotifications(role: "customer" | "provider") {
         body: r.comment ?? "No comment",
         created_at: r.created_at,
         read: false,
+        // customers can revisit / edit their review on the Bookings tab; providers only see it in notifications
+        targetTab: role === "customer" ? "Bookings" : undefined,
+        bookingId: (r as { booking_id?: string | null }).booking_id ?? undefined,
       }));
       notifs.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
       setItems(notifs.slice(0, 60).map((n) => ({ ...n, read: readIds.has(n.id) })));
@@ -103,7 +135,7 @@ export function useNotifications(role: "customer" | "provider") {
   useEffect(() => {
     if (!authUser) return;
     const filterCol = role === "customer" ? "customer_id" : "provider_id";
-    const ch = supabase.channel(`notif-b-${role}-${authUser.id}`)
+    const ch = supabase.channel(`notif-b-${role}-${authUser.id}-${iid}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: `${filterCol}=eq.${authUser.id}` }, (payload) => {
         if (!prefs.bookings) return;
         const row = (payload.new ?? payload.old) as { id: string; service_type: string; status: string; booking_date: string; created_at: string } | null;
@@ -115,44 +147,62 @@ export function useNotifications(role: "customer" | "provider") {
           title,
           body: `${row.service_type} · ${new Date(row.booking_date).toLocaleString()}`,
           created_at: new Date().toISOString(),
+          targetTab: role === "provider" ? "Jobs" : "Bookings",
+          bookingId: row.id,
         };
         push(n);
         if (prefs.toasts) toast.success(title, { description: n.body });
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [authUser?.id, role, prefs.bookings, prefs.toasts, push]);
+  }, [authUser?.id, role, prefs.bookings, prefs.toasts, push, iid]);
 
   // Realtime reviews (providers get told when a customer leaves one)
   useEffect(() => {
     if (!authUser) return;
     const filterCol = role === "provider" ? "provider_id" : "customer_id";
-    const ch = supabase.channel(`notif-r-${role}-${authUser.id}`)
+    const ch = supabase.channel(`notif-r-${role}-${authUser.id}-${iid}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "reviews", filter: `${filterCol}=eq.${authUser.id}` }, (payload) => {
         if (!prefs.reviews) return;
-        const r = payload.new as { id: string; rating: number; comment: string | null; created_at: string };
+        const r = payload.new as { id: string; rating: number; comment: string | null; created_at: string; booking_id: string | null };
         const title = role === "provider" ? `New ${r.rating}★ review` : `Review submitted`;
-        push({ id: `review:${r.id}`, kind: "review", title, body: r.comment ?? "No comment", created_at: r.created_at });
+        push({
+          id: `review:${r.id}`,
+          kind: "review",
+          title,
+          body: r.comment ?? "No comment",
+          created_at: r.created_at,
+          targetTab: role === "customer" ? "Bookings" : undefined,
+          bookingId: r.booking_id ?? undefined,
+        });
         if (prefs.toasts) toast.success(title, { description: r.comment ?? undefined });
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [authUser?.id, role, prefs.reviews, prefs.toasts, push]);
+  }, [authUser?.id, role, prefs.reviews, prefs.toasts, push, iid]);
 
   // Realtime messages (only for messages I did NOT send)
   useEffect(() => {
     if (!authUser) return;
-    const ch = supabase.channel(`notif-m-${authUser.id}`)
+    const ch = supabase.channel(`notif-m-${authUser.id}-${iid}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
         if (!prefs.messages) return;
-        const m = payload.new as { id: string; sender_id: string; body: string; created_at: string };
+        const m = payload.new as { id: string; sender_id: string; body: string; created_at: string; conversation_id: string };
         if (m.sender_id === authUser.id) return;
-        push({ id: `msg:${m.id}`, kind: "message", title: "New message", body: m.body.slice(0, 140), created_at: m.created_at });
+        push({
+          id: `msg:${m.id}`,
+          kind: "message",
+          title: "New message",
+          body: m.body.slice(0, 140),
+          created_at: m.created_at,
+          targetTab: "Messages",
+          conversationId: m.conversation_id,
+        });
         if (prefs.toasts) toast("New message", { description: m.body.slice(0, 120) });
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [authUser?.id, prefs.messages, prefs.toasts, push]);
+  }, [authUser?.id, prefs.messages, prefs.toasts, push, iid]);
 
   const unread = items.filter((i) => !i.read).length;
   const markAllRead = useCallback(() => {
@@ -196,8 +246,17 @@ export function NotificationsPanel({ role }: { role: "customer" | "provider" }) 
             return (
               <button
                 key={n.id}
-                onClick={() => markRead(n.id)}
-                className={`flex w-full items-start gap-3 py-3 text-left transition ${n.read ? "opacity-60" : ""} hover:bg-accent/50`}
+                onClick={() => {
+                  markRead(n.id);
+                  if (n.targetTab) {
+                    emitDashboardNav({
+                      tab: n.targetTab,
+                      conversationId: n.conversationId,
+                      bookingId: n.bookingId,
+                    });
+                  }
+                }}
+                className={`flex w-full items-start gap-3 py-3 text-left transition ${n.read ? "opacity-60" : ""} ${n.targetTab ? "cursor-pointer" : "cursor-default"} hover:bg-accent/50`}
               >
                 <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${n.read ? "bg-muted text-muted-foreground" : "bg-primary-soft text-primary"}`}>
                   <Icon className="h-4 w-4" />
@@ -254,16 +313,17 @@ export function useLiveHomeStats() {
       const [c, p, j, r] = await Promise.all([
         supabase.from("customer_profiles").select("id", { count: "exact", head: true }),
         supabase.from("providers").select("id", { count: "exact", head: true }).eq("status", "approved"),
-        supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "completed"),
+        supabase.from("providers").select("total_jobs").eq("status", "approved"),
         supabase.from("providers").select("rating").eq("status", "approved").gt("reviews_count", 0),
       ]);
       if (!mounted) return;
       const ratings = (r.data ?? []).map((x: { rating: number }) => Number(x.rating)).filter((x) => x > 0);
+      const jobs = (j.data ?? []).reduce((sum, row: { total_jobs: number }) => sum + (Number(row.total_jobs) || 0), 0);
       const avg = ratings.length ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 0;
       setStats({
         customers: c.count ?? 0,
         pros: p.count ?? 0,
-        jobs: j.count ?? 0,
+        jobs,
         rating: Number(avg.toFixed(1)),
       });
     };

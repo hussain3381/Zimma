@@ -68,7 +68,7 @@ export function Navbar() {
         {/* --- FIXED LOGO WRAPPER: No Stretch Aspect Ratio --- */}
         <Link to="/" className="flex items-center">
           <div className="flex h-10 w-32 items-center justify-start z-40 select-none">
-            <Logo className="h-8 w-full max-w-full object-contain" />
+            <Logo className="h-8 w-full max-w-full object-contain [&_span]:min-[767px]:max-[1070px]:hidden " />
           </div>
         </Link>
 

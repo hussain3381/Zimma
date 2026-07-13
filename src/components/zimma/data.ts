@@ -32,6 +32,7 @@ export type Provider = {
   verified: boolean;
   skills: string[];
   avatar: string;
+  bookable?: boolean;
 };
 
 const avatar = (seed: string) =>

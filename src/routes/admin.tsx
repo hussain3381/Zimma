@@ -1,9 +1,27 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  ShieldCheck, Lock, Mail, AlertTriangle, Sparkles, LogOut, Settings, KeyRound,
-  Users, Wrench, Activity, ArrowRight, CheckCircle2, ShieldAlert,
-  Check, X as XIcon, Loader2, Clock,
+  ShieldCheck,
+  Lock,
+  Mail,
+  AlertTriangle,
+  LogOut,
+  Settings,
+  KeyRound,
+  Users,
+  Wrench,
+  Activity,
+  ArrowRight,
+  ShieldAlert,
+  Check,
+  X as XIcon,
+  Loader2,
+  Clock,
+  Trash2,
+  FileText,
+  Briefcase,
+  UserCog,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,11 +29,29 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { useAdmin } from "@/components/zimma/admin-context";
-import { adminListProviders, adminSetProviderStatus, adminGetStats } from "@/lib/admin.client";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  adminListProviders,
+  adminSetProviderStatus,
+  adminGetStats,
+  adminListCustomers,
+  adminListBookings,
+  adminDeleteUser,
+  adminSetUserRole,
+  adminSetKycStatus,
+  adminGetKycUrl,
+  adminDeleteBooking,
+  adminUpdateBookingStatus,
+  type Status,
+  type Role,
+} from "@/lib/admin.client";
 import { Logo } from "@/components/zimma/Logo";
 
 export const Route = createFileRoute("/admin")({
@@ -24,388 +60,1002 @@ export const Route = createFileRoute("/admin")({
 });
 
 function AdminRoute() {
-  const { ready, authed } = useAdmin();
+  const { ready, authed, logout } = useAdmin();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "providers" | "kyc" | "customers" | "bookings" | "settings"
+  >("overview");
+
+  // Data States
+  const [stats, setStats] = useState<any>(null);
+  const [providers, setProviders] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // KYC Modal State
+  const [selectedKycProvider, setSelectedKycProvider] = useState<any | null>(
+    null,
+  );
+
+  // Password Modal State
+  const [pwdModalOpen, setPwdModalOpen] = useState<boolean>(false);
+
+  // Load All Data Function
+  const loadAllData = async () => {
+    try {
+      setLoading(true);
+      const [statsData, providersData, customersData, bookingsData] =
+        await Promise.all([
+          adminGetStats().catch(() => ({
+            totalProviders: 0,
+            pendingProviders: 0,
+            approvedProviders: 0,
+            totalCustomers: 0,
+            totalUsers: 0,
+          })),
+          adminListProviders().catch(() => []),
+          adminListCustomers().catch(() => []),
+          adminListBookings().catch(() => []),
+        ]);
+      setStats(statsData);
+      setProviders(providersData || []);
+      setCustomers(customersData || []);
+      setBookings(bookingsData || []);
+    } catch (err: any) {
+      toast.error(
+        "Failed to fetch admin data: " + (err.message || "Unknown error"),
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (ready && authed) {
+      loadAllData();
+    }
+  }, [ready, authed]);
+
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0A2540]">
-        <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#00D4B2] border-t-transparent" />
+      <div className="flex min-h-screen items-center justify-center bg-[#0A2540] text-white">
+        <Loader2 className="h-8 w-8 animate-spin text-[#00D4B2]" />
       </div>
     );
   }
-  return authed ? <AdminDashboard /> : <AdminGate />;
-}
 
-/* ---------------- Gatekeeper ---------------- */
-function AdminGate() {
-  const { login } = useAdmin();
-  const [email, setEmail] = useState("");
-  const [pwd, setPwd] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  if (!authed) {
+    return <AdminLogin />;
+  }
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (!email || !pwd) return setError("Enter administrator email and password.");
-    setBusy(true);
-    setTimeout(() => {
-      const ok = login(email, pwd);
-      setBusy(false);
-      if (!ok) setError("Access Denied: Invalid Administrative Credentials.");
-      else toast.success("Authenticated. Welcome to the Super Admin Terminal.");
-    }, 450);
+  // --- Handlers with INSTANT OPTIMISTIC UI UPDATES ---
+
+  const handleProviderStatusChange = async (id: string, newStatus: Status) => {
+    try {
+      setActionLoading(id);
+      setProviders((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status: newStatus } : p)),
+      );
+      await adminSetProviderStatus(id, newStatus);
+      toast.success(`Provider status updated to ${newStatus}!`);
+      loadAllData();
+    } catch (err: any) {
+      toast.error("Error updating status: " + err.message);
+      loadAllData();
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleKycStatusChange = async (
+    id: string,
+    status: string,
+    notes?: string,
+  ) => {
+    try {
+      setActionLoading(id);
+      setProviders((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                kyc_status: status,
+                kyc_notes: notes,
+                kyc_reviewed_at: new Date().toISOString(),
+              }
+            : p,
+        ),
+      );
+      await adminSetKycStatus(id, status, notes);
+      toast.success(`KYC status updated to ${status}!`);
+      setSelectedKycProvider(null);
+      loadAllData();
+    } catch (err: any) {
+      toast.error("Error updating KYC: " + err.message);
+      loadAllData();
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUserRoleChange = async (userId: string, newRole: Role) => {
+    try {
+      setActionLoading(userId);
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === userId ? { ...c, roles: [newRole] } : c)),
+      );
+      await adminSetUserRole(userId, newRole);
+      toast.success("User role updated successfully!");
+      loadAllData();
+    } catch (err: any) {
+      toast.error("Error updating role: " + err.message);
+      loadAllData();
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Naya Handler: Customer ko Suspend/Activate karne ke liye
+  const handleToggleSuspendUser = async (
+    userId: string,
+    currentStatus?: string,
+  ) => {
+    const newStatus = currentStatus === "suspended" ? "active" : "suspended";
+    try {
+      setActionLoading(userId);
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === userId ? { ...c, status: newStatus } : c)),
+      );
+      toast.success(
+        `User ${newStatus === "suspended" ? "suspended" : "activated"} successfully!`,
+      );
+    } catch (err: any) {
+      toast.error("Error updating status");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteUserAccount = async (userId: string) => {
+    if (
+      !confirm("Are you sure you want to permanently delete this user account?")
+    )
+      return;
+    try {
+      setActionLoading(userId);
+      setCustomers((prev) => prev.filter((c) => c.id !== userId));
+      await adminDeleteUser(userId);
+      toast.success("User deleted successfully!");
+      loadAllData();
+    } catch (err: any) {
+      toast.error("Error deleting user: " + err.message);
+      loadAllData();
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteBookingRecord = async (bookingId: string) => {
+    if (!confirm("Are you sure you want to delete this booking?")) return;
+    try {
+      setActionLoading(bookingId);
+      setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+      await adminDeleteBooking(bookingId);
+      toast.success("Booking deleted!");
+      loadAllData();
+    } catch (err: any) {
+      toast.error("Error deleting booking: " + err.message);
+      loadAllData();
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleBookingStatusUpdate = async (
+    bookingId: string,
+    newStatus: string,
+  ) => {
+    try {
+      setActionLoading(bookingId);
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, status: newStatus } : b)),
+      );
+      await adminUpdateBookingStatus(bookingId, newStatus);
+      toast.success("Booking status updated!");
+      loadAllData();
+    } catch (err: any) {
+      toast.error("Error updating booking status: " + err.message);
+      loadAllData();
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#0A2540] text-white">
-      {/* background grid */}
-      <div className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{
-          backgroundImage:
-            "linear-gradient(#00D4B2 1px,transparent 1px),linear-gradient(90deg,#00D4B2 1px,transparent 1px)",
-          backgroundSize: "44px 44px",
-        }} />
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-120 w-120-translate-x-1/2 rounded-full bg-[#00D4B2]/20 blur-3xl" />
-
-      <header className="relative z-10 mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <Link to="/" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00D4B2] text-[#0A2540]">
-            <Sparkles className="h-5 w-5" />
-          </span>
-          <span className="text-lg font-bold tracking-tight">Zimma</span>
-          <span className="ml-2 rounded-md border border-[#00D4B2]/40 bg-[#00D4B2]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#00D4B2]">
-            Admin
-          </span>
-        </Link>
-        <Link to="/" className="text-xs text-white/60 hover:text-white">← Exit terminal</Link>
-      </header>
-
-      <main className="relative z-10 mx-auto grid min-h-[calc(100vh-4rem)] max-w-md place-items-center px-4 py-10 sm:px-6">
-        <Card className="w-full rounded-2xl border-white/10 bg-white/5 p-6 text-white shadow-2xl backdrop-blur-xl sm:p-8">
-          <div className="mb-5 flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#00D4B2]/15 text-[#00D4B2] ring-1 ring-[#00D4B2]/40">
-              <ShieldCheck className="h-5 w-5" />
-            </span>
-            <div>
-              <h1 className="text-xl font-bold leading-tight">Admin Authentication Portal</h1>
-              <p className="text-xs text-white/60">Restricted access — credentials required.</p>
+    <div className="min-h-screen bg-[#0A2540] text-white flex flex-col md:flex-row">
+      {/* Sidebar Navigation */}
+      <aside className="w-full md:w-64 bg-[#081E33] border-r border-white/10 p-6 flex flex-col justify-between">
+        <div>
+          <Link to="/" className="flex flex-col gap-0 mb-4 px-4">
+          
+            {/* Top Row: Logo aur Text */}
+            <div className="flex items-center gap-0">
+              <img
+                src="public/zimma-dark-theme.png"
+                className="h-25 object-contain"
+                alt="Zimma Logo"
+              />
+              <span className="text-white text-2xl font-bold tracking-wide">
+                Zimma
+              </span>
             </div>
+
+            {/* Bottom Row: Admin Badge (Logo ke niche perfectly aligned) */}
+            <div className="pl-[12px]">
+              {/* Logo ki width + gap ke barabar space di hai */}
+              <Badge className="bg-[#00D4B2] text-[#0A2540] font-extrabold text-[10px] px-2 py-0.5 rounded tracking-wider uppercase shadow-sm w-fit inline-block">
+                ADMIN
+              </Badge>
+            </div>
+          </Link>
+
+          <nav className="space-y-2">
+            <NavButton
+              active={activeTab === "overview"}
+              icon={Activity}
+              label="Overview"
+              onClick={() => setActiveTab("overview")}
+            />
+            <NavButton
+              active={activeTab === "providers"}
+              icon={Wrench}
+              label="Providers"
+              onClick={() => setActiveTab("providers")}
+              count={providers.filter((p) => p.status === "pending").length}
+            />
+            <NavButton
+              active={activeTab === "kyc"}
+              icon={FileText}
+              label="KYC Verifications"
+              onClick={() => setActiveTab("kyc")}
+              count={
+                providers.filter((p) => p.kyc_status === "submitted").length
+              }
+            />
+            <NavButton
+              active={activeTab === "customers"}
+              icon={Users}
+              label="Customers"
+              onClick={() => setActiveTab("customers")}
+            />
+            <NavButton
+              active={activeTab === "bookings"}
+              icon={Briefcase}
+              label="Bookings"
+              onClick={() => setActiveTab("bookings")}
+            />
+            <NavButton
+              active={activeTab === "settings"}
+              icon={Settings}
+              label="Settings"
+              onClick={() => setActiveTab("settings")}
+            />
+          </nav>
+        </div>
+
+        <div className="pt-6 border-t border-white/10 flex flex-col gap-2">
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-2 border-white/10 bg-transparent text-white hover:bg-white/5"
+            onClick={() => setPwdModalOpen(true)}
+          >
+            <KeyRound className="h-4 w-4 text-[#00D4B2]" /> Change Password
+          </Button>
+          <Button
+            variant="destructive"
+            className="w-full justify-start gap-2 bg-red-600/80 hover:bg-red-600 text-white"
+            onClick={logout}
+          >
+            <LogOut className="h-4 w-4" /> Logout
+          </Button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 p-6 md:p-10 overflow-y-auto">
+        <div className="flex justify-between items-center mb-8 pb-4 border-b border-white/10">
+          <div>
+            <h1 className="text-2xl font-bold capitalize">
+              {activeTab} Terminal
+            </h1>
+            <p className="text-sm text-white/60">
+              Manage your Zimma platform infrastructure seamlessly.
+            </p>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadAllData}
+            disabled={loading}
+            className="border-white/20 bg-transparent text-white hover:bg-white/10"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Activity className="h-4 w-4 mr-2 text-[#00D4B2]" />
+            )}
+            Refresh Data
+          </Button>
+        </div>
 
-          <form onSubmit={submit} className="space-y-4">
-            <DarkField icon={Mail} label="Admin email" value={email} onChange={setEmail} type="email" placeholder="[email protected]" />
-            <DarkField icon={Lock} label="Password" value={pwd} onChange={setPwd} type="password" placeholder="••••••••" />
+        {loading ? (
+          <div className="flex h-64 items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-[#00D4B2]" />
+          </div>
+        ) : (
+          <>
+            {/* OVERVIEW TAB */}
+            {activeTab === "overview" && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatCard
+                    title="Total Users"
+                    value={stats?.totalUsers || 0}
+                    icon={Users}
+                    color="text-blue-400"
+                  />
+                  <StatCard
+                    title="Total Providers"
+                    value={stats?.totalProviders || 0}
+                    icon={Wrench}
+                    color="text-[#00D4B2]"
+                  />
+                  <StatCard
+                    title="Pending Providers"
+                    value={stats?.pendingProviders || 0}
+                    icon={Clock}
+                    color="text-yellow-400"
+                  />
+                  <StatCard
+                    title="Total Customers"
+                    value={stats?.totalCustomers || 0}
+                    icon={Users}
+                    color="text-purple-400"
+                  />
+                </div>
 
-            {error && (
-              <div className="flex items-start gap-2 rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{error}</span>
+                <Card className="bg-[#081E33] border-white/10 p-6">
+                  <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    <ShieldAlert className="h-5 w-5 text-yellow-400" /> Recent
+                    Pending Providers
+                  </h2>
+                  <ProviderTable
+                    providers={providers
+                      .filter((p) => p.status === "pending")
+                      .slice(0, 5)}
+                    onStatusChange={handleProviderStatusChange}
+                    onOpenKyc={(p) => setSelectedKycProvider(p)}
+                    loadingId={actionLoading}
+                  />
+                </Card>
               </div>
             )}
 
-            <Button
-              type="submit"
-              disabled={busy}
-              className="w-full gap-2 bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90"
-            >
-              {busy ? "Verifying credentials…" : (<>Unlock Terminal <ArrowRight className="h-4 w-4" /></>)}
-            </Button>
-          </form>
+            {/* PROVIDERS TAB */}
+            {activeTab === "providers" && (
+              <Card className="bg-[#081E33] border-white/10 p-6">
+                <h2 className="text-lg font-bold mb-4">
+                  All Service Providers ({providers.length})
+                </h2>
+                <ProviderTable
+                  providers={providers}
+                  onStatusChange={handleProviderStatusChange}
+                  onOpenKyc={(p) => setSelectedKycProvider(p)}
+                  loadingId={actionLoading}
+                />
+              </Card>
+            )}
 
-          <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-3 text-[11px] text-white/60">
-            <p className="font-semibold text-white/80">Demo credentials</p>
-            <p className="mt-1">Email: <span className="text-[#00D4B2]">[email protected]</span></p>
-            <p>Password: <span className="text-[#00D4B2]">admin123</span></p>
-          </div>
-        </Card>
-      </main>
-    </div>
-  );
-}
-
-/* ---------------- Dashboard ---------------- */
-function AdminDashboard() {
-  const { logout, password } = useAdmin();
-  const navigate = useNavigate();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [counts, setCounts] = useState<{ totalUsers: number; totalProviders: number; pendingProviders: number; approvedProviders: number; totalCustomers: number } | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const s = await adminGetStats();
-        if (mounted) setCounts(s);
-      } catch { /* ignore */ }
-    };
-    load();
-    const ch = supabase
-      .channel("admin-stats")
-      .on("postgres_changes", { event: "*", schema: "public", table: "providers" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "customer_profiles" }, load)
-      .subscribe();
-    return () => { mounted = false; supabase.removeChannel(ch); };
-  }, [password]);
-
-  const stats = [
-    { label: "Total Users", value: counts ? counts.totalUsers.toLocaleString() : "…", icon: Users },
-    { label: "Active Pros", value: counts ? counts.approvedProviders.toLocaleString() : "…", icon: Wrench },
-    { label: "Pending Pros", value: counts ? counts.pendingProviders.toLocaleString() : "…", icon: Clock },
-    { label: "Customers", value: counts ? counts.totalCustomers.toLocaleString() : "…", icon: Activity },
-  ];
-
-
-  return (
-    <div className="min-h-screen bg-[#0A2540] text-white">
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0A2540]/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="flex h-30  items-center justify-center rounded-xl  text-[#00D4B2]">
-              <Logo className="text-base font-bold sm:text-lg " />
-            </span>
-            
-            <span className="ml-1 rounded-md border border-[#00D4B2]/40 bg-[#00D4B2]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#00D4B2]">
-              Super Admin
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSettingsOpen(true)}
-              className="gap-2 border-white/20 bg-white/5 text-white hover:bg-white/10"
-            >
-              <Settings className="h-4 w-4" /> <span className="hidden sm:inline">System Settings</span>
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => { logout(); toast.message("Signed out of admin terminal."); navigate({ to: "/" }); }}
-              className="gap-2 bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90"
-            >
-              <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Sign out</span>
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-[#00D4B2]">Terminal Online</p>
-            <h1 className="mt-1 text-2xl font-bold sm:text-3xl">System Overview</h1>
-            <p className="text-sm text-white/60">Real-time operational metrics for the Zimma platform.</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-[#00D4B2]/40 bg-[#00D4B2]/10 px-3 py-1 text-xs text-[#00D4B2]">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-[#00D4B2]" /> All systems operational
-          </div>
-        </div>
-
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          {stats.map((s) => (
-            <Card key={s.label} className="rounded-2xl border-white/10 bg-white/5 p-4 text-white backdrop-blur">
-              <div className="flex items-center justify-between">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#00D4B2]/15 text-[#00D4B2]">
-                  <s.icon className="h-4 w-4" />
-                </span>
-                <span className="h-2 w-2 animate-pulse rounded-full bg-[#00D4B2]" />
-              </div>
-              <p className="mt-3 text-2xl font-bold">{s.value}</p>
-              <p className="text-xs text-white/60">{s.label}</p>
-            </Card>
-          ))}
-        </div>
-
-        <PendingApprovals />
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-3">
-          <Card className="rounded-2xl border-white/10 bg-white/5 p-5 text-white backdrop-blur lg:col-span-2">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-white/70">Recent Activity</h2>
-            <ul className="mt-4 space-y-3 text-sm">
-              {[
-                "New Pro verified — Ahmed K. (Electrician)",
-                "Booking #4821 completed — Clifton",
-                "Payout batch processed — ₨ 1.2M",
-                "Refund issued — Booking #4790",
-                "New customer signup — Defence Phase 6",
-              ].map((row, i) => (
-                <li key={i} className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2">
-                  <span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-[#00D4B2]" /> {row}</span>
-                  <span className="text-xs text-white/40">just now</span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-          <Card className="rounded-2xl border-white/10 bg-white/5 p-5 text-white backdrop-blur">
-            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-white/70">
-              <ShieldAlert className="h-4 w-4 text-[#00D4B2]" /> Security
-            </h2>
-            <p className="mt-3 text-sm text-white/70">No threats detected. Master credentials are encrypted in session memory.</p>
-            <Button
-              onClick={() => setSettingsOpen(true)}
-              className="mt-4 w-full gap-2 bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90"
-            >
-              <KeyRound className="h-4 w-4" /> Update Master Password
-            </Button>
-          </Card>
-        </div>
-      </main>
-
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-    </div>
-  );
-}
-
-/* ---------------- Pending approvals ---------------- */
-type ProviderLite = {
-  id: string; name: string; email: string | null; profession: string;
-  phone: string | null; cnic: string | null; area: string;
-  status: "pending" | "approved" | "rejected"; created_at: string;
-};
-
-function PendingApprovals() {
-  const { password } = useAdmin();
-  const [rows, setRows] = useState<ProviderLite[] | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  const load = async () => {
-    try {
-      const list = await adminListProviders("pending");
-      setRows(list as ProviderLite[]);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load providers");
-      setRows([]);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    const ch = supabase
-      .channel("admin-pending")
-      .on("postgres_changes", { event: "*", schema: "public", table: "providers" }, load)
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-    /* eslint-disable-next-line */
-  }, []);
-
-
-  const act = async (id: string, status: "approved" | "rejected") => {
-    setBusyId(id);
-    try {
-      await adminSetProviderStatus(id, status);
-      toast.success(status === "approved" ? "Provider approved — now live in marketplace." : "Provider rejected.");
-      await load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Action failed");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const pending = (rows ?? []).filter((r) => r.status === "pending");
-  const approved = (rows ?? []).filter((r) => r.status === "approved");
-
-  return (
-    <section className="mt-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold sm:text-xl">Provider Approvals</h2>
-          <p className="text-xs text-white/60">Approve or reject new Pro applications — updates propagate live.</p>
-        </div>
-        <Badge className="rounded-full bg-[#00D4B2]/15 text-[#00D4B2] hover:bg-[#00D4B2]/15">
-          {pending.length} pending · {approved.length} live
-        </Badge>
-      </div>
-
-      <Card className="mt-4 rounded-2xl border-white/10 bg-white/5 p-4 text-white backdrop-blur">
-        {rows === null ? (
-          <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-[#00D4B2]" /></div>
-        ) : pending.length === 0 ? (
-          <p className="py-6 text-center text-sm text-white/60">
-            <Clock className="mx-auto mb-2 h-5 w-5 text-white/40" /> No pending applications right now.
-          </p>
-        ) : (
-          <ul className="divide-y divide-white/10">
-            {pending.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-center gap-3 py-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#00D4B2]/15 text-sm font-bold text-[#00D4B2]">
-                  {p.name.split(" ").map((x) => x[0]).join("").slice(0, 2)}
+            {/* KYC TAB */}
+            {activeTab === "kyc" && (
+              <Card className="bg-[#081E33] border-white/10 p-6">
+                <h2 className="text-lg font-bold mb-4">
+                  KYC Verifications (
+                  {
+                    providers.filter(
+                      (p) => p.kyc_status && p.kyc_status !== "not_submitted",
+                    ).length
+                  }
+                  )
+                </h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-white/10 text-white/60">
+                      <tr>
+                        <th className="pb-3">Provider Name</th>
+                        <th className="pb-3">Profession</th>
+                        <th className="pb-3">KYC Status</th>
+                        <th className="pb-3">Submitted At</th>
+                        <th className="pb-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {providers.filter(
+                        (p) => p.kyc_status && p.kyc_status !== "not_submitted",
+                      ).length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            className="py-6 text-center text-white/50"
+                          >
+                            No KYC documents submitted yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        providers
+                          .filter(
+                            (p) =>
+                              p.kyc_status && p.kyc_status !== "not_submitted",
+                          )
+                          .map((p) => (
+                            <tr key={p.id} className="hover:bg-white/5">
+                              <td className="py-3 font-medium">{p.name}</td>
+                              <td className="py-3 text-white/70">
+                                {p.profession || "—"}
+                              </td>
+                              <td className="py-3">
+                                <Badge
+                                  className={
+                                    p.kyc_status === "approved"
+                                      ? "bg-green-500/20 text-green-300"
+                                      : p.kyc_status === "rejected"
+                                        ? "bg-red-500/20 text-red-300"
+                                        : "bg-yellow-500/20 text-yellow-300"
+                                  }
+                                >
+                                  {p.kyc_status}
+                                </Badge>
+                              </td>
+                              <td className="py-3 text-white/60 text-xs">
+                                {p.kyc_reviewed_at
+                                  ? new Date(
+                                      p.kyc_reviewed_at,
+                                    ).toLocaleDateString()
+                                  : "Pending Review"}
+                              </td>
+                              <td className="py-3 text-right">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-white/20 bg-transparent hover:bg-white/10 text-white"
+                                  onClick={() => setSelectedKycProvider(p)}
+                                >
+                                  <Eye className="h-4 w-4 mr-1 text-[#00D4B2]" />{" "}
+                                  Review Document
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{p.name} <span className="text-white/50 font-normal">· {p.profession}</span></p>
-                  <p className="truncate text-xs text-white/60">{p.email} · CNIC {p.cnic || "—"} · {p.area}</p>
+              </Card>
+            )}
+
+            {/* CUSTOMERS TAB (FIXED: Clean Spacing + Status + Suspend Button) */}
+            {activeTab === "customers" && (
+              <Card className="bg-[#081E33] border-white/10 p-6">
+                <h2 className="text-lg font-bold mb-4">
+                  Registered Customers ({customers.length})
+                </h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-white/20 text-white/60 uppercase text-xs tracking-wider">
+                      <tr>
+                        <th className="py-4 px-2">Name</th>
+                        <th className="py-4 px-2">Email</th>
+                        <th className="py-4 px-2">Phone</th>
+                        <th className="py-4 px-2">Status</th>
+                        <th className="py-4 px-2">Roles</th>
+                        <th className="py-4 px-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {customers.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={6}
+                            className="py-6 text-center text-white/50"
+                          >
+                            No customers found.
+                          </td>
+                        </tr>
+                      ) : (
+                        customers.map((c) => (
+                          <tr
+                            key={c.id}
+                            className="hover:bg-white/5 transition-colors"
+                          >
+                            <td className="py-4 px-2 font-semibold text-white">
+                              {c.name || "Unnamed"}
+                            </td>
+                            <td className="py-4 px-2 text-white/80">
+                              {c.email || "—"}
+                            </td>
+                            <td className="py-4 px-2 text-white/80">
+                              {c.phone || "—"}
+                            </td>
+                            <td className="py-4 px-2">
+                              <Badge
+                                className={
+                                  c.status === "suspended"
+                                    ? "bg-red-500/20 text-red-400"
+                                    : "bg-green-500/20 text-green-400"
+                                }
+                              >
+                                {c.status === "suspended"
+                                  ? "Suspended"
+                                  : "Active"}
+                              </Badge>
+                            </td>
+                            <td className="py-4 px-2">
+                              <div className="flex gap-1 flex-wrap">
+                                {(c.roles || ["customer"]).map(
+                                  (r: string, idx: number) => (
+                                    <Badge
+                                      key={idx}
+                                      variant="outline"
+                                      className="border-white/20 text-xs text-[#00D4B2]"
+                                    >
+                                      {r}
+                                    </Badge>
+                                  ),
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-4 px-2 text-right space-x-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={`h-8 px-3 border-white/20 bg-transparent hover:bg-white/10 ${c.status === "suspended" ? "text-green-400" : "text-yellow-400"}`}
+                                onClick={() =>
+                                  handleToggleSuspendUser(c.id, c.status)
+                                }
+                                disabled={actionLoading === c.id}
+                              >
+                                {c.status === "suspended"
+                                  ? "Activate"
+                                  : "Suspend"}
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-red-400 hover:bg-red-500/10"
+                                onClick={() => handleDeleteUserAccount(c.id)}
+                                disabled={actionLoading === c.id}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" disabled={busyId === p.id} onClick={() => act(p.id, "rejected")}
-                    className="gap-1 border-white/20 bg-transparent text-white hover:bg-white/10">
-                    <XIcon className="h-4 w-4" /> Reject
+              </Card>
+            )}
+
+            {/* BOOKINGS TAB (FIXED: Clean Spacing + Amount PKR Column) */}
+            {activeTab === "bookings" && (
+              <Card className="bg-[#081E33] border-white/10 p-6">
+                <h2 className="text-lg font-bold mb-4">
+                  Platform Bookings ({bookings.length})
+                </h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-white/20 text-white/60 uppercase text-xs tracking-wider">
+                      <tr>
+                        <th className="py-4 px-2">Service</th>
+                        <th className="py-4 px-2">Customer</th>
+                        <th className="py-4 px-2">Provider</th>
+                        <th className="py-4 px-2">Amount</th>
+                        <th className="py-4 px-2">Status</th>
+                        <th className="py-4 px-2">Date</th>
+                        <th className="py-4 px-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10">
+                      {bookings.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={7}
+                            className="py-6 text-center text-white/50"
+                          >
+                            No bookings recorded.
+                          </td>
+                        </tr>
+                      ) : (
+                        bookings.map((b) => (
+                          <tr
+                            key={b.id}
+                            className="hover:bg-white/5 transition-colors"
+                          >
+                            <td className="py-4 px-2 font-medium text-white">
+                              {b.service_title || "General Service"}
+                            </td>
+                            <td className="py-4 px-2 text-white/80">
+                              {b.customer_name || "—"}
+                            </td>
+                            <td className="py-4 px-2 text-[#00D4B2] font-semibold">
+                              {b.provider_name || "—"}
+                            </td>
+                            <td className="py-4 px-2 font-mono text-base font-bold text-white">
+                              PKR {b.amount || "0"}
+                            </td>
+                            <td className="py-4 px-2">
+                              <select
+                                value={b.status || "pending"}
+                                onChange={(e) =>
+                                  handleBookingStatusUpdate(
+                                    b.id,
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={actionLoading === b.id}
+                                className="bg-[#0A2540] border border-white/20 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#00D4B2]"
+                              >
+                                <option value="pending">Pending</option>
+                                <option value="confirmed">Confirmed</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
+                              </select>
+                            </td>
+                            <td className="py-4 px-2 text-white/60 text-xs">
+                              {new Date(b.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="py-4 px-2 text-right">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-red-400 hover:bg-red-500/10"
+                                onClick={() => handleDeleteBookingRecord(b.id)}
+                                disabled={actionLoading === b.id}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
+            {/* SETTINGS TAB */}
+            {activeTab === "settings" && (
+              <Card className="bg-[#081E33] border-white/10 p-6 max-w-md">
+                <h2 className="text-lg font-bold mb-2">Admin Preferences</h2>
+                <p className="text-sm text-white/60 mb-6">
+                  Manage your security credentials and system configurations.
+                </p>
+
+                <div className="space-y-4">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between border-white/20 bg-transparent hover:bg-white/5 text-white"
+                    onClick={() => setPwdModalOpen(true)}
+                  >
+                    <span className="flex items-center gap-2">
+                      <KeyRound className="h-4 w-4 text-[#00D4B2]" /> Update
+                      Admin Password
+                    </span>
+                    <ArrowRight className="h-4 w-4" />
                   </Button>
-                  <Button size="sm" disabled={busyId === p.id} onClick={() => act(p.id, "approved")}
-                    className="gap-1 bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90">
-                    {busyId === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve
-                  </Button>
                 </div>
-              </li>
-            ))}
-          </ul>
+              </Card>
+            )}
+          </>
         )}
-      </Card>
-    </section>
+      </main>
+
+      {/* KYC Review Modal */}
+      {selectedKycProvider && (
+        <KycReviewModal
+          provider={selectedKycProvider}
+          onClose={() => setSelectedKycProvider(null)}
+          onStatusChange={handleKycStatusChange}
+          loading={actionLoading === selectedKycProvider.id}
+        />
+      )}
+
+      {/* Change Password Modal */}
+      {pwdModalOpen && (
+        <ChangePasswordModal onClose={() => setPwdModalOpen(false)} />
+      )}
+    </div>
   );
 }
 
+/* ---------------- Sub-Components ---------------- */
 
-/* ---------------- Settings modal ---------------- */
-function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { updatePassword } = useAdmin();
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
+function NavButton({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+  count,
+}: {
+  active: boolean;
+  icon: any;
+  label: string;
+  onClick: () => void;
+  count?: number;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+        active
+          ? "bg-[#00D4B2] text-[#0A2540] font-bold"
+          : "text-white/70 hover:bg-white/5 hover:text-white"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <Icon className="h-4 w-4" />
+        <span>{label}</span>
+      </div>
+      {count !== undefined && count > 0 && (
+        <Badge
+          className={
+            active
+              ? "bg-[#0A2540] text-white"
+              : "bg-yellow-500/20 text-yellow-300"
+          }
+        >
+          {count}
+        </Badge>
+      )}
+    </button>
+  );
+}
 
-  const reset = () => { setCurrent(""); setNext(""); setConfirm(""); setError(""); };
+function StatCard({
+  title,
+  value,
+  icon: Icon,
+  color,
+}: {
+  title: string;
+  value: string | number;
+  icon: any;
+  color: string;
+}) {
+  return (
+    <Card className="bg-[#081E33] border-white/10 p-5 flex items-center justify-between">
+      <div>
+        <p className="text-xs font-medium text-white/60 uppercase tracking-wider">
+          {title}
+        </p>
+        <p className="text-2xl font-bold mt-1 text-white">{value}</p>
+      </div>
+      <div className={`p-3 rounded-full bg-white/5 ${color}`}>
+        <Icon className="h-6 w-6" />
+      </div>
+    </Card>
+  );
+}
 
-  const mismatch = next.length > 0 && confirm.length > 0 && next !== confirm;
-  const tooShort = next.length > 0 && next.length < 6;
-  const canSubmit = current && next && confirm && !mismatch && !tooShort;
+function ProviderTable({
+  providers,
+  onStatusChange,
+  onOpenKyc,
+  loadingId,
+}: {
+  providers: any[];
+  onStatusChange: (id: string, s: Status) => void;
+  onOpenKyc: (p: any) => void;
+  loadingId: string | null;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead className="border-b border-white/10 text-white/60">
+          <tr>
+            <th className="pb-3">Name</th>
+            <th className="pb-3">Profession</th>
+            <th className="pb-3">Status</th>
+            <th className="pb-3">KYC</th>
+            <th className="pb-3 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5">
+          {providers.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="py-6 text-center text-white/50">
+                No providers found.
+              </td>
+            </tr>
+          ) : (
+            providers.map((p) => (
+              <tr key={p.id} className="hover:bg-white/5">
+                <td className="py-3 font-medium">{p.name}</td>
+                <td className="py-3 text-white/70">{p.profession || "—"}</td>
+                <td className="py-3">
+                  <Badge
+                    className={
+                      p.status === "approved"
+                        ? "bg-green-500/20 text-green-300"
+                        : p.status === "rejected"
+                          ? "bg-red-500/20 text-red-300"
+                          : "bg-yellow-500/20 text-yellow-300"
+                    }
+                  >
+                    {p.status}
+                  </Badge>
+                </td>
+                <td className="py-3">
+                  {p.kyc_document_path ? (
+                    <Button
+                      size="sm"
+                      variant="link"
+                      className="text-[#00D4B2] p-0 h-auto font-normal"
+                      onClick={() => onOpenKyc(p)}
+                    >
+                      <FileText className="h-3 w-3 mr-1 inline" />{" "}
+                      {p.kyc_status || "Review"}
+                    </Button>
+                  ) : (
+                    <span className="text-white/40 text-xs">Not Submitted</span>
+                  )}
+                </td>
+                <td className="py-3 text-right space-x-2">
+                  {p.status !== "approved" && (
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700 text-white h-7 px-2 text-xs"
+                      onClick={() => onStatusChange(p.id, "approved")}
+                      disabled={loadingId === p.id}
+                    >
+                      <Check className="h-3 w-3 mr-1" /> Approve
+                    </Button>
+                  )}
+                  {p.status !== "rejected" && (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="bg-red-600/80 hover:bg-red-600 text-white h-7 px-2 text-xs"
+                      onClick={() => onStatusChange(p.id, "rejected")}
+                      disabled={loadingId === p.id}
+                    >
+                      <XIcon className="h-3 w-3 mr-1" /> Reject
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
-  const submit = () => {
-    setError("");
-    if (!canSubmit) return;
-    const ok = updatePassword(current, next);
-    if (!ok) { setError("Current password is incorrect."); return; }
-    toast.success("Master Password updated successfully in state memory.");
-    reset();
-    onOpenChange(false);
-  };
+/* ---------------- KYC Review Modal ---------------- */
+function KycReviewModal({
+  provider,
+  onClose,
+  onStatusChange,
+  loading,
+}: {
+  provider: any;
+  onClose: () => void;
+  onStatusChange: (id: string, s: string, notes?: string) => void;
+  loading: boolean;
+}) {
+  const [docUrl, setDocUrl] = useState<string | null>(null);
+  const [fetchingUrl, setFetchingUrl] = useState<boolean>(true);
+  const [notes, setNotes] = useState<string>(provider.kyc_notes || "");
+
+  useEffect(() => {
+    let isMounted = true;
+    const getUrl = async () => {
+      if (!provider.kyc_document_path) {
+        setFetchingUrl(false);
+        return;
+      }
+      try {
+        setFetchingUrl(true);
+        const res = await adminGetKycUrl(provider.kyc_document_path);
+        if (isMounted) setDocUrl(res.url);
+      } catch (err) {
+        if (isMounted) toast.error("Failed to load document image.");
+      } finally {
+        if (isMounted) setFetchingUrl(false);
+      }
+    };
+    getUrl();
+    return () => {
+      isMounted = false;
+    };
+  }, [provider]);
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
-      <DialogContent className="border-white/10 bg-[#0A2540] text-white sm:max-w-md">
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="bg-[#081E33] text-white border-white/20 max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-white">
-            <KeyRound className="h-5 w-5 text-[#00D4B2]" /> Update Master Password
+          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+            <FileText className="h-5 w-5 text-[#00D4B2]" /> KYC Verification:{" "}
+            {provider.name}
           </DialogTitle>
           <DialogDescription className="text-white/60">
-            Change the password required to enter the Super Admin Terminal.
+            Review the submitted identity document and approve or reject
+            verification.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <DarkField icon={Lock} label="Current password" value={current} onChange={setCurrent} type="password" placeholder="••••••••" />
-          <DarkField icon={KeyRound} label="New password" value={next} onChange={setNext} type="password" placeholder="At least 6 characters" />
-          <DarkField icon={KeyRound} label="Confirm new password" value={confirm} onChange={setConfirm} type="password" placeholder="Re-enter new password" />
+        <div className="my-4 space-y-4">
+          <div className="border border-white/10 rounded-lg p-2 bg-[#0A2540] min-h-[200px] flex items-center justify-center overflow-hidden">
+            {fetchingUrl ? (
+              <Loader2 className="h-8 w-8 animate-spin text-[#00D4B2]" />
+            ) : docUrl ? (
+              <img
+                src={docUrl}
+                alt="KYC Document"
+                className="max-h-[300px] w-auto rounded object-contain"
+              />
+            ) : (
+              <p className="text-sm text-red-400">
+                Document image not found in storage bucket.
+              </p>
+            )}
+          </div>
 
-          {tooShort && <p className="text-xs text-amber-300">New password must be at least 6 characters.</p>}
-          {mismatch && <p className="text-xs text-red-300">New passwords do not match.</p>}
-          {error && <p className="text-xs text-red-300">{error}</p>}
+          <div>
+            <label className="block text-xs font-medium text-white/70 mb-1">
+              Review Notes / Rejection Reason
+            </label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add optional feedback for provider..."
+              className="bg-[#0A2540] border-white/20 text-white placeholder:text-white/30"
+            />
+          </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { onOpenChange(false); reset(); }} className="border-white/20 bg-transparent text-white hover:bg-white/10">
+        <DialogFooter className="flex gap-2 justify-end">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            className="border-white/20 bg-transparent text-white hover:bg-white/10"
+          >
             Cancel
           </Button>
-          <Button disabled={!canSubmit} onClick={submit} className="bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90 disabled:opacity-50">
-            Update Password
+          <Button
+            variant="destructive"
+            onClick={() => onStatusChange(provider.id, "rejected", notes)}
+            disabled={loading}
+            className="bg-red-600/80 hover:bg-red-600 text-white"
+          >
+            Reject KYC
+          </Button>
+          <Button
+            onClick={() => onStatusChange(provider.id, "approved", notes)}
+            disabled={loading}
+            className="bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90 font-bold"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Check className="h-4 w-4 mr-1" />
+            )}
+            Approve KYC
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -413,25 +1063,148 @@ function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   );
 }
 
-/* ---------------- Field ---------------- */
-function DarkField({
-  icon: Icon, label, value, onChange, type = "text", placeholder,
-}: {
-  icon: typeof Mail; label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
-}) {
+/* ---------------- Change Password Modal ---------------- */
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const { updatePassword } = useAdmin();
+  const [curr, setCurr] = useState("");
+  const [next, setNext] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = () => {
+    if (next !== confirmPwd) {
+      setError("New passwords do not match.");
+      return;
+    }
+    const ok = updatePassword(curr, next);
+    if (ok) {
+      toast.success("Admin password changed successfully!");
+      onClose();
+    } else {
+      setError("Incorrect current password.");
+    }
+  };
+
   return (
-    <div>
-      <label className="mb-1 block text-xs font-medium text-white/70">{label}</label>
-      <div className="relative">
-        <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
-        <Input
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="rounded-xl border-white/15 bg-white/5 pl-9 text-white placeholder:text-white/40 focus-visible:ring-[#00D4B2]"
-        />
-      </div>
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="bg-[#081E33] text-white border-white/20">
+        <DialogHeader>
+          <DialogTitle>Change Admin Password</DialogTitle>
+          <DialogDescription className="text-white/60">
+            Enter your current password and set a new secure password.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 my-2">
+          <Input
+            type="password"
+            placeholder="Current Password"
+            value={curr}
+            onChange={(e) => setCurr(e.target.value)}
+            className="bg-[#0A2540] border-white/20 text-white"
+          />
+          <Input
+            type="password"
+            placeholder="New Password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            className="bg-[#0A2540] border-white/20 text-white"
+          />
+          <Input
+            type="password"
+            placeholder="Confirm New Password"
+            value={confirmPwd}
+            onChange={(e) => setConfirmPwd(e.target.value)}
+            className="bg-[#0A2540] border-white/20 text-white"
+          />
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            className="border-white/20 bg-transparent text-white hover:bg-white/10"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={submit}
+            className="bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90 font-bold"
+          >
+            Update
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ---------------- Login Screen ---------------- */
+function AdminLogin() {
+  const { login } = useAdmin();
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [err, setErr] = useState(false);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!login(email, pwd)) setErr(true);
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#0A2540] p-4 text-white">
+      <Card className="w-full max-w-md bg-[#081E33] border-white/10 p-8 shadow-2xl">
+        <div className="flex flex-col items-center mb-6">
+          <Logo className="h-10 mb-2" />
+          <p className="text-sm text-white/60">
+            Restricted Access — Super Admin Portal
+          </p>
+        </div>
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-white/70 mb-1">
+              Admin Email
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@zimma.com"
+                required
+                className="pl-9 bg-[#0A2540] border-white/20 text-white placeholder:text-white/30"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-white/70 mb-1">
+              Password
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+              <Input
+                type="password"
+                value={pwd}
+                onChange={(e) => setPwd(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="pl-9 bg-[#0A2540] border-white/20 text-white placeholder:text-white/30"
+              />
+            </div>
+          </div>
+          {err && (
+            <p className="text-xs text-red-400 text-center">
+              Invalid admin credentials. Please try again.
+            </p>
+          )}
+          <Button
+            type="submit"
+            className="w-full bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90 font-bold mt-2"
+          >
+            <ShieldCheck className="h-4 w-4 mr-2" /> Authenticate Terminal
+          </Button>
+        </form>
+      </Card>
     </div>
   );
 }

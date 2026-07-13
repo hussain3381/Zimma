@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-
 type AdminCtx = {
   ready: boolean;
   authed: boolean;

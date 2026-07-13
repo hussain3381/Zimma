@@ -21,8 +21,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { BecomeProDialog } from "@/components/zimma/BecomeProDialog";
 import { useFavorites } from "@/components/zimma/favorites";
-import { ChatInbox, useUnreadMessageCount } from "@/components/zimma/chat";
+import { ChatInbox, openConversationWithProvider, useUnreadMessageCount } from "@/components/zimma/chat";
 import { NotificationsPanel as LiveNotificationsPanel, useNotificationBadge } from "@/components/zimma/notification-center";
+import { emitDashboardNav, subscribeDashboardNav } from "@/lib/dashboard-nav";
 
 export const Route = createFileRoute("/dashboard/customer")({
   head: () => ({ meta: [{ title: "My Dashboard — Zimma" }] }),
@@ -63,6 +64,9 @@ function useApprovedProviders() {
 function CustomerDashboard() {
   const [tab, setTab] = useState("Overview");
   const [proDialogOpen, setProDialogOpen] = useState(false);
+  const [focusConversationId, setFocusConversationId] = useState<string | undefined>();
+  const [focusBookingId, setFocusBookingId] = useState<string | undefined>();
+  const [focusToken, setFocusToken] = useState(0);
   const { user } = useAuth();
   const { ids: favoriteIds } = useFavorites();
   const [bookings, setBookings] = useCustomerBookings();
@@ -74,13 +78,21 @@ function CustomerDashboard() {
   const providers = (providersRows ?? []).map(rowToProvider);
   const liveBookingCount = (bookings ?? []).filter((b) => !["completed", "cancelled", "rejected"].includes(b.status)).length;
 
+  // Deep-link: notification center emits a nav target → switch tab + remember focus id.
+  useEffect(() => subscribeDashboardNav((target) => {
+    setTab(target.tab);
+    setFocusConversationId(target.conversationId);
+    setFocusBookingId(target.bookingId);
+    setFocusToken(target.token ?? Date.now());
+  }), []);
+
   const nav = [
     { label: "Overview", icon: Home },
     { label: "Bookings", icon: Calendar, badge: liveBookingCount },
-    { label: "Messages", icon: MessageSquare, badge: unread },
     { label: "Favourites", icon: Heart, badge: favoriteIds.size },
-    { label: "History", icon: History },
+    { label: "Messages", icon: MessageSquare, badge: unread },
     { label: "Notifications", icon: Bell, badge: notifCount },
+    { label: "History", icon: History },
     { label: "Settings", icon: Settings },
   ];
 
@@ -96,11 +108,11 @@ function CustomerDashboard() {
           onBecomePro={() => setProDialogOpen(true)}
         />
       )}
-      {tab === "Bookings" && <BookingsPanel rows={bookings} setRows={setBookings} />}
+      {tab === "Bookings" && <BookingsPanel rows={bookings} setRows={setBookings} focusBookingId={focusBookingId} focusToken={focusToken} />}
       {tab === "Messages" && (
         <>
           <SectionHeader title="Messages" subtitle="Chat with your service pros in real time." />
-          <ChatInbox role="customer" />
+          <ChatInbox role="customer" focusConversationId={focusConversationId} focusToken={focusToken} />
         </>
       )}
       {tab === "Favourites" && <FavouritesPanel providers={providers} loading={providersRows === null} />}
@@ -255,7 +267,7 @@ function BecomeProCTA({
               </p>
             </div>
           </div>
-          <Link to="/auth/pending">
+          <Link to="/auth-pending">
             <Button size="sm" variant="outline" className="gap-1 border-amber-600/40 bg-white text-amber-800 hover:bg-amber-100">
               View status <ArrowRight className="h-4 w-4" />
             </Button>
@@ -538,6 +550,7 @@ function ReviewForm({ booking, existing, onSaved }: { booking: BookingRow; exist
 
 function BookingActions({ b, setRows }: { b: BookingRow; setRows: Dispatch<SetStateAction<BookingRow[] | null>> }) {
   const [busy, setBusy] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
 
   const cancelBooking = async () => {
     setBusy(true);
@@ -548,24 +561,54 @@ function BookingActions({ b, setRows }: { b: BookingRow; setRows: Dispatch<SetSt
     toast.success("Booking cancelled");
   };
 
+  const messageProvider = async () => {
+    setChatBusy(true);
+    const convId = await openConversationWithProvider(b.provider_id);
+    setChatBusy(false);
+    if (!convId) return;
+    emitDashboardNav({ tab: "Messages", conversationId: convId });
+    toast.success("Opening provider chat");
+  };
+
+  const messageButton = (
+    <Button size="sm" variant="outline" disabled={chatBusy} onClick={messageProvider} className="gap-1">
+      {chatBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+      Message Pro
+    </Button>
+  );
+
   if (b.status === "pending") {
-    return <Button size="sm" variant="outline" disabled={busy} onClick={cancelBooking}>Cancel request</Button>;
+    return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Button size="sm" variant="outline" disabled={busy} onClick={cancelBooking}>Cancel request</Button></div>;
   }
   if (b.status === "confirmed") {
-    return <Button size="sm" variant="outline" disabled={busy} onClick={cancelBooking}>Cancel booking</Button>;
+    return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Button size="sm" variant="outline" disabled={busy} onClick={cancelBooking}>Cancel booking</Button></div>;
   }
   if (b.status === "in_progress") {
-    return <Badge className="rounded-full bg-blue-100 text-blue-700 hover:bg-blue-100">Job active</Badge>;
+    return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Badge className="rounded-full bg-blue-100 text-blue-700 hover:bg-blue-100">Job active</Badge></div>;
   }
   if (b.status === "completed") {
-    return <Link to="/book" search={{ providerId: b.provider_id }}><Button size="sm" variant="outline">Book again</Button></Link>;
+    return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Link to="/book" search={{ providerId: b.provider_id }}><Button size="sm" variant="outline">Book again</Button></Link></div>;
   }
-  return <Link to="/book"><Button size="sm" variant="outline">New booking</Button></Link>;
+  return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Link to="/book"><Button size="sm" variant="outline">New booking</Button></Link></div>;
 }
 
-function BookingsPanel({ rows, setRows }: { rows: BookingRow[] | null; setRows: Dispatch<SetStateAction<BookingRow[] | null>> }) {
+function BookingsPanel({ rows, setRows, focusBookingId, focusToken }: { rows: BookingRow[] | null; setRows: Dispatch<SetStateAction<BookingRow[] | null>>; focusBookingId?: string; focusToken?: number }) {
   const [reviews, setReviews] = useCustomerReviews();
   const reviewByBooking = new Map((reviews ?? []).filter((r) => r.booking_id).map((r) => [r.booking_id as string, r]));
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // Deep-link: scroll the focused booking into view + flash a highlight ring.
+  useEffect(() => {
+    if (!focusBookingId || !rows) return;
+    const el = containerRef.current?.querySelector<HTMLDivElement>(`[data-booking-id="${focusBookingId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightId(focusBookingId);
+    const t = setTimeout(() => setHighlightId(null), 2400);
+    return () => clearTimeout(t);
+  }, [focusBookingId, focusToken, rows]);
+
   return (
     <>
       <SectionHeader
@@ -579,9 +622,13 @@ function BookingsPanel({ rows, setRows }: { rows: BookingRow[] | null; setRows: 
         ) : rows.length === 0 ? (
           <EmptyState title="No bookings yet" subtitle="When you book a service, it will show up here." />
         ) : (
-          <div className="space-y-3">
+          <div ref={containerRef} className="space-y-3">
             {rows.map((b) => (
-              <div key={b.id} className="rounded-2xl border border-border p-4">
+              <div
+                key={b.id}
+                data-booking-id={b.id}
+                className={`rounded-2xl border p-4 transition ${highlightId === b.id ? "border-primary ring-2 ring-primary/30" : "border-border"}`}
+              >
                 <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                   <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-soft text-primary">
                     <Calendar className="h-5 w-5" />

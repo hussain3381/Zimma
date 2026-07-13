@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 // Lovable import removed from here
 import { useAuth } from "@/components/zimma/auth-context";
 import { AuthSkeleton, FullScreenSpinner } from "@/components/zimma/loaders";
+import {Logo} from "@/components/zimma/Logo";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign In or Join — Zimma" }] }),
@@ -24,7 +25,7 @@ function AuthPageWrapper() {
   useEffect(() => {
     if (ready && user) {
       if (user.role === "provider") {
-        navigate({ to: user.status === "approved" ? "/dashboard/provider" : "/auth/pending" });
+        navigate({ to: user.status === "approved" ? "/dashboard/provider" : "/auth-pending" });
       } else {
         navigate({ to: "/dashboard/customer" });
       }
@@ -120,10 +121,7 @@ function AuthPage() {
     <div className="min-h-screen bg-gradient-to-br from-primary-soft via-background to-background">
       <header className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-glow">
-            <Sparkles className="h-5 w-5" />
-          </span>
-          <span className="text-xl font-bold tracking-tight">Zimma</span>
+            <Logo className="" />
         </Link>
         <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">← Back to home</Link>
       </header>
