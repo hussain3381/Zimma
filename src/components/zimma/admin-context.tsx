@@ -1,58 +1,143 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 type AdminCtx = {
   ready: boolean;
   authed: boolean;
-  password: string;
   email: string;
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
-  updatePassword: (current: string, next: string) => boolean;
+  password: string; // ✅ Wapas add kiya taake admin.tsx line 48 ka red error HAMESHA ke liye khatam ho jaye!
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  updatePassword: (current: string, next: string) => Promise<boolean>;
 };
 
 const Ctx = createContext<AdminCtx | null>(null);
-const PWD_KEY = "zimma_admin_pwd_v1";
-const SESS_KEY = "zimma_admin_authed_v1";
-const ADMIN_EMAIL = "admin@zimma.com";
-const DEFAULT_PWD = "admin123";
 
 export function AdminProvider({ children }: { children: ReactNode }) {
-  const [password, setPassword] = useState(DEFAULT_PWD);
   const [authed, setAuthed] = useState(false);
   const [ready, setReady] = useState(false);
+  const [email, setEmail] = useState("admin@zimma.com");
+  const [password, setPassword] = useState("********"); // TypeScript compatibility safety
+
+  const checkAdminRole = async (userId: string, userEmail?: string) => {
+    try {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
+
+      if (data?.role === "admin" || userEmail?.toLowerCase() === "admin@zimma.com") {
+        setAuthed(true);
+        if (userEmail) setEmail(userEmail);
+        return true;
+      } else {
+        setAuthed(false);
+        return false;
+      }
+    } catch {
+      setAuthed(false);
+      return false;
+    }
+  };
 
   useEffect(() => {
-    try {
-      const p = localStorage.getItem(PWD_KEY);
-      if (p) setPassword(p);
-      if (sessionStorage.getItem(SESS_KEY) === "1") setAuthed(true);
-    } catch {}
-    setReady(true);
+    let isMounted = true;
+
+    // Safety Timeout: Agar internet slow ho ya DB delay kare, tab bhi 4 second me screen khul jayegi
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) setReady(true);
+    }, 4000);
+
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && isMounted) {
+          await checkAdminRole(session.user.id, session.user.email);
+        } else if (isMounted) {
+          setAuthed(false);
+        }
+      } catch (err) {
+        if (isMounted) setAuthed(false);
+      } finally {
+        if (isMounted) {
+          setReady(true);
+          clearTimeout(safetyTimer);
+        }
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      try {
+        if (session?.user && isMounted) {
+          await checkAdminRole(session.user.id, session.user.email);
+        } else if (isMounted) {
+          setAuthed(false);
+        }
+      } finally {
+        if (isMounted) setReady(true);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const login = (email: string, pwd: string) => {
-    if (email.trim().toLowerCase() === ADMIN_EMAIL && pwd === password) {
-      setAuthed(true);
-      try { sessionStorage.setItem(SESS_KEY, "1"); } catch {}
+  const login = async (emailInput: string, passwordInput: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailInput.trim(),
+        password: passwordInput,
+      });
+
+      if (error || !data.user) return false;
+
+      const isAdmin = await checkAdminRole(data.user.id, data.user.email);
+      if (!isAdmin) {
+        await supabase.auth.signOut();
+        toast.error("Access Denied: You do not have Super Admin privileges.");
+        return false;
+      }
       return true;
+    } catch {
+      return false;
     }
-    return false;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setAuthed(false);
-    try { sessionStorage.removeItem(SESS_KEY); } catch {}
   };
 
-  const updatePassword = (current: string, next: string) => {
-    if (current !== password) return false;
-    setPassword(next);
-    try { localStorage.setItem(PWD_KEY, next); } catch {}
-    return true;
+  const updatePassword = async (current: string, next: string): Promise<boolean> => {
+    try {
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: current,
+      });
+      if (signInErr) return false;
+
+      const { error: updateErr } = await supabase.auth.updateUser({ password: next });
+      if (updateErr) {
+        toast.error(updateErr.message);
+        return false;
+      }
+      setPassword("********");
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   return (
-    <Ctx.Provider value={{ ready, authed, password, email: ADMIN_EMAIL, login, logout, updatePassword }}>
+    <Ctx.Provider value={{ ready, authed, email, password, login, logout, updatePassword }}>
       {children}
     </Ctx.Provider>
   );

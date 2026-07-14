@@ -1,10 +1,9 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   ShieldCheck,
   Lock,
   Mail,
-  AlertTriangle,
   LogOut,
   Settings,
   KeyRound,
@@ -20,7 +19,6 @@ import {
   Trash2,
   FileText,
   Briefcase,
-  UserCog,
   Eye,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -44,15 +42,12 @@ import {
   adminListCustomers,
   adminListBookings,
   adminDeleteUser,
-  adminSetUserRole,
   adminSetKycStatus,
   adminGetKycUrl,
   adminDeleteBooking,
   adminUpdateBookingStatus,
   type Status,
-  type Role,
 } from "@/lib/admin.client";
-import { Logo } from "@/components/zimma/Logo";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Super Admin Terminal — Zimma" }] }),
@@ -61,7 +56,6 @@ export const Route = createFileRoute("/admin")({
 
 function AdminRoute() {
   const { ready, authed, logout } = useAdmin();
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<
     "overview" | "providers" | "kyc" | "customers" | "bookings" | "settings"
   >("overview");
@@ -75,9 +69,7 @@ function AdminRoute() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // KYC Modal State
-  const [selectedKycProvider, setSelectedKycProvider] = useState<any | null>(
-    null,
-  );
+  const [selectedKycProvider, setSelectedKycProvider] = useState<any | null>(null);
 
   // Password Modal State
   const [pwdModalOpen, setPwdModalOpen] = useState<boolean>(false);
@@ -180,24 +172,6 @@ function AdminRoute() {
     }
   };
 
-  const handleUserRoleChange = async (userId: string, newRole: Role) => {
-    try {
-      setActionLoading(userId);
-      setCustomers((prev) =>
-        prev.map((c) => (c.id === userId ? { ...c, roles: [newRole] } : c)),
-      );
-      await adminSetUserRole(userId, newRole);
-      toast.success("User role updated successfully!");
-      loadAllData();
-    } catch (err: any) {
-      toast.error("Error updating role: " + err.message);
-      loadAllData();
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // Naya Handler: Customer ko Suspend/Activate karne ke liye
   const handleToggleSuspendUser = async (
     userId: string,
     currentStatus?: string,
@@ -279,11 +253,10 @@ function AdminRoute() {
       <aside className="w-full md:w-64 bg-[#081E33] border-r border-white/10 p-6 flex flex-col justify-between">
         <div>
           <Link to="/" className="flex flex-col gap-0 mb-4 px-4">
-          
             {/* Top Row: Logo aur Text */}
             <div className="flex items-center gap-0">
               <img
-                src="public/zimma-dark-theme.png"
+                src="zimma-dark-theme.png"
                 className="h-25 object-contain"
                 alt="Zimma Logo"
               />
@@ -292,9 +265,8 @@ function AdminRoute() {
               </span>
             </div>
 
-            {/* Bottom Row: Admin Badge (Logo ke niche perfectly aligned) */}
-            <div className="pl-[12px]">
-              {/* Logo ki width + gap ke barabar space di hai */}
+            {/* Bottom Row: Admin Badge */}
+            <div className="pl-3">
               <Badge className="bg-[#00D4B2] text-[#0A2540] font-extrabold text-[10px] px-2 py-0.5 rounded tracking-wider uppercase shadow-sm w-fit inline-block">
                 ADMIN
               </Badge>
@@ -426,7 +398,7 @@ function AdminRoute() {
                   />
                 </div>
 
-                <Card className="bg-[#081E33] border-white/10 p-6">
+                <Card className="bg-[#081E33] border-white/10 p-6 text-white color-white">
                   <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
                     <ShieldAlert className="h-5 w-5 text-yellow-400" /> Recent
                     Pending Providers
@@ -445,7 +417,7 @@ function AdminRoute() {
 
             {/* PROVIDERS TAB */}
             {activeTab === "providers" && (
-              <Card className="bg-[#081E33] border-white/10 p-6">
+              <Card className="bg-[#081E33] border-white/10 p-6 text-white">
                 <h2 className="text-lg font-bold mb-4">
                   All Service Providers ({providers.length})
                 </h2>
@@ -460,7 +432,7 @@ function AdminRoute() {
 
             {/* KYC TAB */}
             {activeTab === "kyc" && (
-              <Card className="bg-[#081E33] border-white/10 p-6">
+              <Card className="bg-[#081E33] border-white/10 text-white p-6">
                 <h2 className="text-lg font-bold mb-4">
                   KYC Verifications (
                   {
@@ -472,7 +444,7 @@ function AdminRoute() {
                 </h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="border-b border-white/10 text-white/60">
+                    <thead className="border-b border-white/40 text-white">
                       <tr>
                         <th className="pb-3">Provider Name</th>
                         <th className="pb-3">Profession</th>
@@ -481,14 +453,14 @@ function AdminRoute() {
                         <th className="pb-3 text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody className="divide-y divide-white/10">
                       {providers.filter(
                         (p) => p.kyc_status && p.kyc_status !== "not_submitted",
                       ).length === 0 ? (
                         <tr>
                           <td
                             colSpan={5}
-                            className="py-6 text-center text-white/50"
+                            className="py-6 text-center text-white"
                           >
                             No KYC documents submitted yet.
                           </td>
@@ -545,15 +517,15 @@ function AdminRoute() {
               </Card>
             )}
 
-            {/* CUSTOMERS TAB (FIXED: Clean Spacing + Status + Suspend Button) */}
+            {/* CUSTOMERS TAB */}
             {activeTab === "customers" && (
-              <Card className="bg-[#081E33] border-white/10 p-6">
+              <Card className="bg-[#081E33] border-white/10 text-white p-6">
                 <h2 className="text-lg font-bold mb-4">
                   Registered Customers ({customers.length})
                 </h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="border-b border-white/20 text-white/60 uppercase text-xs tracking-wider">
+                    <thead className="border-b border-white/40 text-white/60 uppercase text-xs tracking-wider">
                       <tr>
                         <th className="py-4 px-2">Name</th>
                         <th className="py-4 px-2">Email</th>
@@ -649,15 +621,15 @@ function AdminRoute() {
               </Card>
             )}
 
-            {/* BOOKINGS TAB (FIXED: Clean Spacing + Amount PKR Column) */}
+            {/* BOOKINGS TAB */}
             {activeTab === "bookings" && (
-              <Card className="bg-[#081E33] border-white/10 p-6">
+              <Card className="bg-[#081E33] border-white/10 text-white p-6">
                 <h2 className="text-lg font-bold mb-4">
                   Platform Bookings ({bookings.length})
                 </h2>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="border-b border-white/20 text-white/60 uppercase text-xs tracking-wider">
+                    <thead className="border-b border-white/40 text-white/60 uppercase text-xs tracking-wider">
                       <tr>
                         <th className="py-4 px-2">Service</th>
                         <th className="py-4 px-2">Customer</th>
@@ -739,7 +711,7 @@ function AdminRoute() {
 
             {/* SETTINGS TAB */}
             {activeTab === "settings" && (
-              <Card className="bg-[#081E33] border-white/10 p-6 max-w-md">
+              <Card className="bg-[#081E33] border-white/10 text-white p-6 max-w-md">
                 <h2 className="text-lg font-bold mb-2">Admin Preferences</h2>
                 <p className="text-sm text-white/60 mb-6">
                   Manage your security credentials and system configurations.
@@ -865,7 +837,7 @@ function ProviderTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="border-b border-white/10 text-white/60">
+        <thead className="border-b border-white/50 text-white">
           <tr>
             <th className="pb-3">Name</th>
             <th className="pb-3">Profession</th>
@@ -874,10 +846,10 @@ function ProviderTable({
             <th className="pb-3 text-right">Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/5">
+        <tbody className="divide-y divide-white/10">
           {providers.length === 0 ? (
             <tr>
-              <td colSpan={5} className="py-6 text-center text-white/50">
+              <td colSpan={5} className="py-6 text-center text-white">
                 No providers found.
               </td>
             </tr>
@@ -1000,14 +972,14 @@ function KycReviewModal({
         </DialogHeader>
 
         <div className="my-4 space-y-4">
-          <div className="border border-white/10 rounded-lg p-2 bg-[#0A2540] min-h-[200px] flex items-center justify-center overflow-hidden">
+          <div className="border border-white/10 rounded-lg p-2 bg-[#0A2540] min-h-50 flex items-center justify-center overflow-hidden">
             {fetchingUrl ? (
               <Loader2 className="h-8 w-8 animate-spin text-[#00D4B2]" />
             ) : docUrl ? (
               <img
                 src={docUrl}
                 alt="KYC Document"
-                className="max-h-[300px] w-auto rounded object-contain"
+                className="max-h-75 w-auto rounded object-contain"
               />
             ) : (
               <p className="text-sm text-red-400">
@@ -1070,18 +1042,23 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const [next, setNext] = useState("");
   const [confirmPwd, setConfirmPwd] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submit = () => {
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (next !== confirmPwd) {
       setError("New passwords do not match.");
       return;
     }
-    const ok = updatePassword(curr, next);
+    setError("");
+    setLoading(true);
+    const ok = await updatePassword(curr, next);
+    setLoading(false);
     if (ok) {
-      toast.success("Admin password changed successfully!");
+      toast.success("Password updated successfully!");
       onClose();
     } else {
-      setError("Incorrect current password.");
+      toast.error("Failed to update password. Check your current password.");
     }
   };
 
@@ -1094,45 +1071,54 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
             Enter your current password and set a new secure password.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 my-2">
-          <Input
-            type="password"
-            placeholder="Current Password"
-            value={curr}
-            onChange={(e) => setCurr(e.target.value)}
-            className="bg-[#0A2540] border-white/20 text-white"
-          />
-          <Input
-            type="password"
-            placeholder="New Password"
-            value={next}
-            onChange={(e) => setNext(e.target.value)}
-            className="bg-[#0A2540] border-white/20 text-white"
-          />
-          <Input
-            type="password"
-            placeholder="Confirm New Password"
-            value={confirmPwd}
-            onChange={(e) => setConfirmPwd(e.target.value)}
-            className="bg-[#0A2540] border-white/20 text-white"
-          />
-          {error && <p className="text-xs text-red-400">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="border-white/20 bg-transparent text-white hover:bg-white/10"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={submit}
-            className="bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90 font-bold"
-          >
-            Update
-          </Button>
-        </DialogFooter>
+        <form onSubmit={submit}>
+          <div className="space-y-3 my-2">
+            <Input
+              type="password"
+              placeholder="Current Password"
+              value={curr}
+              onChange={(e) => setCurr(e.target.value)}
+              required
+              className="bg-[#0A2540] border-white/20 text-white"
+            />
+            <Input
+              type="password"
+              placeholder="New Password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              required
+              className="bg-[#0A2540] border-white/20 text-white"
+            />
+            <Input
+              type="password"
+              placeholder="Confirm New Password"
+              value={confirmPwd}
+              onChange={(e) => setConfirmPwd(e.target.value)}
+              required
+              className="bg-[#0A2540] border-white/20 text-white"
+            />
+            {error && <p className="text-xs text-red-400">{error}</p>}
+          </div>
+          <DialogFooter className="mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={loading}
+              className="border-white/20 bg-transparent text-white hover:bg-white/10"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90 font-bold"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Update
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -1144,26 +1130,36 @@ function AdminLogin() {
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
   const [err, setErr] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!login(email, pwd)) setErr(true);
+    setErr(false);
+    setLoading(true);
+
+    const ok = await login(email, pwd);
+    setLoading(false);
+
+    if (!ok) {
+      setErr(true);
+    } else {
+      toast.success("Welcome Admin!");
+    }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#0A2540] p-4 text-white">
-      <Card className="w-full max-w-md bg-[#081E33] border-white/10 p-8 shadow-2xl">
-        <div className="flex flex-col items-center mb-6">
-          <Logo className="h-10 mb-2" />
-          <p className="text-sm text-white/60">
-            Restricted Access — Super Admin Portal
-          </p>
+    <div className="min-h-screen bg-[#0A2540] flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-[#0A2540]/80 border border-white/10 rounded-2xl p-8 shadow-2xl backdrop-blur-sm">
+        <div className="text-center mb-8">
+          <div className="inline-flex p-3 rounded-2xl bg-[#00D4B2]/10 text-[#00D4B2] mb-4">
+            <ShieldCheck className="h-8 w-8" />
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Zimma Terminal</h1>
+          <p className="text-sm text-white/60 mt-1">Restricted Access — Super Admin Portal</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-white/70 mb-1">
-              Admin Email
-            </label>
+            <label className="block text-xs font-medium text-white/70 mb-1">Admin Email</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
               <Input
@@ -1172,14 +1168,13 @@ function AdminLogin() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@zimma.com"
                 required
+                disabled={loading}
                 className="pl-9 bg-[#0A2540] border-white/20 text-white placeholder:text-white/30"
               />
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-white/70 mb-1">
-              Password
-            </label>
+            <label className="block text-xs font-medium text-white/70 mb-1">Password</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
               <Input
@@ -1188,23 +1183,31 @@ function AdminLogin() {
                 onChange={(e) => setPwd(e.target.value)}
                 placeholder="••••••••"
                 required
+                disabled={loading}
                 className="pl-9 bg-[#0A2540] border-white/20 text-white placeholder:text-white/30"
               />
             </div>
           </div>
           {err && (
-            <p className="text-xs text-red-400 text-center">
+            <p className="text-xs text-red-400 text-center animate-shake">
               Invalid admin credentials. Please try again.
             </p>
           )}
           <Button
             type="submit"
-            className="w-full bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90 font-bold mt-2"
+            disabled={loading}
+            className="w-full bg-[#00D4B2] text-[#0A2540] hover:bg-[#00D4B2]/90 font-bold transition-all shadow-lg shadow-[#00D4B2]/20"
           >
-            <ShieldCheck className="h-4 w-4 mr-2" /> Authenticate Terminal
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Verifying Admin...
+              </>
+            ) : (
+              "Authenticate Terminal"
+            )}
           </Button>
         </form>
-      </Card>
+      </div>
     </div>
   );
 }

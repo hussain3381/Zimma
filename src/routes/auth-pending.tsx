@@ -1,6 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Sparkles, ShieldCheck, Clock, FileCheck2, UserCheck, PartyPopper, ArrowLeft, LogOut } from "lucide-react";
+import {
+  Sparkles,
+  ShieldCheck,
+  Clock,
+  FileCheck2,
+  UserCheck,
+  PartyPopper,
+  ArrowLeft,
+  LogOut,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/components/zimma/auth-context";
@@ -32,9 +41,15 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
   const [status, setStatus] = useState(initial);
 
   useEffect(() => {
-    if (!user) { navigate({ to: "/auth" }); return; }
+    if (!user) {
+      navigate({ to: "/auth" });
+      return;
+    }
     // Approved provider? Send them straight to the pro dashboard.
-    if (user.role === "provider") { navigate({ to: "/dashboard/provider" }); return; }
+    if (user.role === "provider") {
+      navigate({ to: "/dashboard/provider" });
+      return;
+    }
     // Customer with no application at all? Nothing to show here.
     if (user.role === "customer" && !user.providerApplication) {
       navigate({ to: "/dashboard/customer" });
@@ -47,9 +62,16 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
       .channel(`provider-${user.id}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "providers", filter: `id=eq.${user.id}` },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "providers",
+          filter: `id=eq.${user.id}`,
+        },
         (payload) => {
-          const next = (payload.new as { status: "pending" | "approved" | "rejected" }).status;
+          const next = (
+            payload.new as { status: "pending" | "approved" | "rejected" }
+          ).status;
           setStatus(next);
           refresh();
           if (next === "approved") {
@@ -60,7 +82,11 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
       .subscribe();
 
     const iv = setInterval(async () => {
-      const { data } = await supabase.from("providers").select("status").eq("id", user.id).maybeSingle();
+      const { data } = await supabase
+        .from("providers")
+        .select("status")
+        .eq("id", user.id)
+        .maybeSingle();
       if (data?.status && data.status !== status) {
         setStatus(data.status);
         refresh();
@@ -70,7 +96,10 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
       }
     }, 8000);
 
-    return () => { supabase.removeChannel(channel); clearInterval(iv); };
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(iv);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -86,7 +115,7 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
   ];
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-br from-primary-soft via-background to-background">
+    <div className="relative min-h-screen bg-linear-to-br from-primary-soft via-background to-background">
       <header className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-glow">
@@ -100,7 +129,15 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
               <ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard
             </Button>
           </Link>
-          <Button variant="ghost" size="sm" onClick={async () => { await signOut(); navigate({ to: "/" }); }} className="gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              await signOut();
+              navigate({ to: "/" });
+            }}
+            className="gap-1"
+          >
             <LogOut className="h-3.5 w-3.5" /> Sign out
           </Button>
         </div>
@@ -108,11 +145,23 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
 
       <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
         <Card className="rounded-3xl border-border bg-card p-6 text-center shadow-card sm:p-10">
-          <div className={`mx-auto flex h-20 w-20 items-center justify-center rounded-3xl ${rejected ? "bg-destructive/10 text-destructive" : "bg-primary-soft text-primary"}`}>
-            {approved ? <PartyPopper className="h-10 w-10" /> : <ShieldCheck className={`h-10 w-10 ${rejected ? "" : "animate-pulse"}`} />}
+          <div
+            className={`mx-auto flex h-20 w-20 items-center justify-center rounded-3xl ${rejected ? "bg-destructive/10 text-destructive" : "bg-primary-soft text-primary"}`}
+          >
+            {approved ? (
+              <PartyPopper className="h-10 w-10" />
+            ) : (
+              <ShieldCheck
+                className={`h-10 w-10 ${rejected ? "" : "animate-pulse"}`}
+              />
+            )}
           </div>
           <h1 className="mt-6 text-2xl font-bold sm:text-3xl">
-            {approved ? "You're verified! 🎉" : rejected ? "Application declined" : "Verification in progress"}
+            {approved
+              ? "You're verified! 🎉"
+              : rejected
+                ? "Application declined"
+                : "Verification in progress"}
           </h1>
           <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground sm:text-base">
             {approved
@@ -124,11 +173,18 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
 
           <div className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm font-medium text-muted-foreground">
             <Clock className="h-4 w-4" />
-            {approved ? "Approved" : rejected ? "Declined" : "Waiting on admin approval"}
+            {approved
+              ? "Approved"
+              : rejected
+                ? "Declined"
+                : "Waiting on admin approval"}
           </div>
 
           <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div className={`h-full rounded-full transition-all duration-500 ${rejected ? "bg-destructive" : "bg-gradient-to-r from-primary to-blue-600"}`} style={{ width: `${progress}%` }} />
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${rejected ? "bg-destructive" : "bg-gradient-to-r from-primary to-blue-600"}`}
+              style={{ width: `${progress}%` }}
+            />
           </div>
 
           <div className="mt-8 grid gap-3 text-left sm:grid-cols-2">
@@ -136,10 +192,14 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
               <div
                 key={s.label}
                 className={`flex items-center gap-3 rounded-2xl border p-3 transition ${
-                  s.done ? "border-success/30 bg-success-soft/40" : "border-border bg-background"
+                  s.done
+                    ? "border-success/30 bg-success-soft/40"
+                    : "border-border bg-background"
                 }`}
               >
-                <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${s.done ? "bg-success text-white" : "bg-muted text-muted-foreground"}`}>
+                <div
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${s.done ? "bg-success text-white" : "bg-muted text-muted-foreground"}`}
+                >
                   <s.i className="h-4 w-4" />
                 </div>
                 <span className="text-sm font-medium">{s.label}</span>
@@ -149,10 +209,14 @@ function PendingPage({ user }: { user: ReturnType<typeof useAuth>["user"] }) {
 
           <div className="mt-8 flex flex-wrap justify-center gap-2">
             <Link to="/dashboard/customer">
-              <Button variant="outline" size="sm">Keep browsing</Button>
+              <Button variant="outline" size="sm">
+                Keep browsing
+              </Button>
             </Link>
             <Link to="/providers">
-              <Button variant="ghost" size="sm">See other pros</Button>
+              <Button variant="ghost" size="sm">
+                See other pros
+              </Button>
             </Link>
           </div>
         </Card>

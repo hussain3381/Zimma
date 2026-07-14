@@ -1,16 +1,16 @@
 export function SkeletonBlock({ className = "" }: { className?: string }) {
   return (
-    <div 
+    <div
       className={`animate-pulse rounded-xl 
       bg-zinc-300/80 border border-gray-300/30 
-      dark:bg-zinc-800 ${className}`} 
+      dark:bg-zinc-800 ${className}`}
     />
   );
 }
 
 export function AuthSkeleton() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-soft via-background to-background">
+    <div className="min-h-screen bg-linear-to-br from-primary-soft via-background to-background">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <SkeletonBlock className="h-9 w-28" />
         <SkeletonBlock className="h-4 w-24" />
@@ -67,7 +67,7 @@ export function DashboardSkeleton() {
 
 export function PendingSkeleton() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-soft via-background to-background">
+    <div className="min-h-screen bg-linear-to-br from-primary-soft via-background to-background">
       <div className="mx-auto flex h-16 max-w-7xl items-center px-4 sm:px-6">
         <SkeletonBlock className="h-9 w-28" />
       </div>

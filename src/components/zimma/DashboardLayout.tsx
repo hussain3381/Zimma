@@ -91,7 +91,7 @@ export function DashboardLayout({
             </nav>
           </div>
 
-          <div className="mt-auto m-4 rounded-2xl bg-gradient-to-br from-primary to-blue-700 p-5 text-primary-foreground shadow-glow">
+          <div className="mt-auto m-4 rounded-2xl bg-linear-to-br from-primary to-blue-700 p-5 text-primary-foreground shadow-glow">
             <p className="text-sm font-semibold">Need help?</p>
             <p className="mt-1 text-xs opacity-90">
               Our team is online 24/7 across Karachi.

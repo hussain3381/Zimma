@@ -1,9 +1,32 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
-  Home, Calendar, Heart, History, Bell, Settings, Plus, Star,
-  User, Lock, Trash2, Search, Loader2, Wrench, Sparkles, ArrowRight,
-  CheckCircle2, Clock, XCircle, MessageSquare,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import {
+  Home,
+  Calendar,
+  Heart,
+  History,
+  Bell,
+  Settings,
+  Plus,
+  Star,
+  User,
+  Lock,
+  Trash2,
+  Search,
+  Loader2,
+  Wrench,
+  Sparkles,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  MessageSquare,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/zimma/DashboardLayout";
 import { Reveal } from "@/components/zimma/animations";
@@ -21,8 +44,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { BecomeProDialog } from "@/components/zimma/BecomeProDialog";
 import { useFavorites } from "@/components/zimma/favorites";
-import { ChatInbox, openConversationWithProvider, useUnreadMessageCount } from "@/components/zimma/chat";
-import { NotificationsPanel as LiveNotificationsPanel, useNotificationBadge } from "@/components/zimma/notification-center";
+import {
+  ChatInbox,
+  openConversationWithProvider,
+  useUnreadMessageCount,
+} from "@/components/zimma/chat";
+import {
+  NotificationsPanel as LiveNotificationsPanel,
+  useNotificationBadge,
+} from "@/components/zimma/notification-center";
 import { emitDashboardNav, subscribeDashboardNav } from "@/lib/dashboard-nav";
 
 export const Route = createFileRoute("/dashboard/customer")({
@@ -35,7 +65,10 @@ function CustomerDashboardWrapper() {
   const navigate = useNavigate();
   useEffect(() => {
     if (!ready) return;
-    if (!user) { navigate({ to: "/auth" }); return; }
+    if (!user) {
+      navigate({ to: "/auth" });
+      return;
+    }
     // Approved providers belong on the pro dashboard.
     if (user.role === "provider") navigate({ to: "/dashboard/provider" });
   }, [ready, user, navigate]);
@@ -48,15 +81,25 @@ function useApprovedProviders() {
   useEffect(() => {
     let mounted = true;
     const load = async () => {
-      const { data } = await supabase.from("providers").select("*").eq("status", "approved");
+      const { data } = await supabase
+        .from("providers")
+        .select("*")
+        .eq("status", "approved");
       if (mounted) setRows((data ?? []) as ProviderRow[]);
     };
     load();
     const ch = supabase
       .channel("customer-providers")
-      .on("postgres_changes", { event: "*", schema: "public", table: "providers" }, load)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "providers" },
+        load,
+      )
       .subscribe();
-    return () => { mounted = false; supabase.removeChannel(ch); };
+    return () => {
+      mounted = false;
+      supabase.removeChannel(ch);
+    };
   }, []);
   return rows;
 }
@@ -64,7 +107,9 @@ function useApprovedProviders() {
 function CustomerDashboard() {
   const [tab, setTab] = useState("Overview");
   const [proDialogOpen, setProDialogOpen] = useState(false);
-  const [focusConversationId, setFocusConversationId] = useState<string | undefined>();
+  const [focusConversationId, setFocusConversationId] = useState<
+    string | undefined
+  >();
   const [focusBookingId, setFocusBookingId] = useState<string | undefined>();
   const [focusToken, setFocusToken] = useState(0);
   const { user } = useAuth();
@@ -73,18 +118,25 @@ function CustomerDashboard() {
   const unread = useUnreadMessageCount();
   const notifCount = useNotificationBadge("customer");
   const displayName = user?.role === "customer" ? user.name : "You";
-  const application = user?.role === "customer" ? user.providerApplication : undefined;
+  const application =
+    user?.role === "customer" ? user.providerApplication : undefined;
   const providersRows = useApprovedProviders();
   const providers = (providersRows ?? []).map(rowToProvider);
-  const liveBookingCount = (bookings ?? []).filter((b) => !["completed", "cancelled", "rejected"].includes(b.status)).length;
+  const liveBookingCount = (bookings ?? []).filter(
+    (b) => !["completed", "cancelled", "rejected"].includes(b.status),
+  ).length;
 
   // Deep-link: notification center emits a nav target → switch tab + remember focus id.
-  useEffect(() => subscribeDashboardNav((target) => {
-    setTab(target.tab);
-    setFocusConversationId(target.conversationId);
-    setFocusBookingId(target.bookingId);
-    setFocusToken(target.token ?? Date.now());
-  }), []);
+  useEffect(
+    () =>
+      subscribeDashboardNav((target) => {
+        setTab(target.tab);
+        setFocusConversationId(target.conversationId);
+        setFocusBookingId(target.bookingId);
+        setFocusToken(target.token ?? Date.now());
+      }),
+    [],
+  );
 
   const nav = [
     { label: "Overview", icon: Home },
@@ -97,7 +149,13 @@ function CustomerDashboard() {
   ];
 
   return (
-    <DashboardLayout role="Customer" name={displayName} nav={nav} activeLabel={tab} onSelect={setTab}>
+    <DashboardLayout
+      role="Customer"
+      name={displayName}
+      nav={nav}
+      activeLabel={tab}
+      onSelect={setTab}
+    >
       {tab === "Overview" && (
         <OverviewPanel
           name={displayName}
@@ -108,14 +166,33 @@ function CustomerDashboard() {
           onBecomePro={() => setProDialogOpen(true)}
         />
       )}
-      {tab === "Bookings" && <BookingsPanel rows={bookings} setRows={setBookings} focusBookingId={focusBookingId} focusToken={focusToken} />}
+      {tab === "Bookings" && (
+        <BookingsPanel
+          rows={bookings}
+          setRows={setBookings}
+          focusBookingId={focusBookingId}
+          focusToken={focusToken}
+        />
+      )}
       {tab === "Messages" && (
         <>
-          <SectionHeader title="Messages" subtitle="Chat with your service pros in real time." />
-          <ChatInbox role="customer" focusConversationId={focusConversationId} focusToken={focusToken} />
+          <SectionHeader
+            title="Messages"
+            subtitle="Chat with your service pros in real time."
+          />
+          <ChatInbox
+            role="customer"
+            focusConversationId={focusConversationId}
+            focusToken={focusToken}
+          />
         </>
       )}
-      {tab === "Favourites" && <FavouritesPanel providers={providers} loading={providersRows === null} />}
+      {tab === "Favourites" && (
+        <FavouritesPanel
+          providers={providers}
+          loading={providersRows === null}
+        />
+      )}
       {tab === "History" && <HistoryPanel />}
       {tab === "Notifications" && <NotificationsPanel />}
       {tab === "Settings" && <SettingsPanel />}
@@ -124,19 +201,37 @@ function CustomerDashboard() {
   );
 }
 
-function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+function SectionHeader({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+}) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         <h1 className="text-2xl font-bold sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+        {subtitle && (
+          <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+        )}
       </div>
       {action}
     </div>
   );
 }
 
-function EmptyState({ title, subtitle, cta }: { title: string; subtitle: string; cta?: React.ReactNode }) {
+function EmptyState({
+  title,
+  subtitle,
+  cta,
+}: {
+  title: string;
+  subtitle: string;
+  cta?: React.ReactNode;
+}) {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-card/60 p-8 text-center">
       <h3 className="text-base font-semibold">{title}</h3>
@@ -147,7 +242,12 @@ function EmptyState({ title, subtitle, cta }: { title: string; subtitle: string;
 }
 
 function OverviewPanel({
-  name, providers, bookings, loading, application, onBecomePro,
+  name,
+  providers,
+  bookings,
+  loading,
+  application,
+  onBecomePro,
 }: {
   name: string;
   providers: ReturnType<typeof rowToProvider>[];
@@ -156,21 +256,38 @@ function OverviewPanel({
   application?: { status: "pending" | "approved" | "rejected" };
   onBecomePro: () => void;
 }) {
-  const completedBookings = (bookings ?? []).filter((b) => b.status === "completed");
+  const completedBookings = (bookings ?? []).filter(
+    (b) => b.status === "completed",
+  );
   const uniquePros = new Set((bookings ?? []).map((b) => b.provider_id)).size;
   const spent = completedBookings.reduce((sum, b) => sum + (b.price ?? 0), 0);
-  const upcoming = (bookings ?? []).filter((b) => b.status === "pending" || b.status === "confirmed" || b.status === "in_progress");
+  const upcoming = (bookings ?? []).filter(
+    (b) =>
+      b.status === "pending" ||
+      b.status === "confirmed" ||
+      b.status === "in_progress",
+  );
   return (
     <>
-      <section className="rounded-3xl bg-gradient-to-br from-primary via-blue-600 to-blue-800 p-5 text-primary-foreground shadow-glow sm:p-8">
+      <section className="rounded-3xl bg-linear-to-br from-primary via-blue-600 to-blue-800 p-5 text-primary-foreground shadow-glow sm:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-widest opacity-80 sm:text-xs">Welcome</p>
-            <h1 className="mt-1 text-2xl font-bold sm:text-4xl">Hi {name} 👋</h1>
-            <p className="mt-2 max-w-xl text-sm opacity-90 sm:text-base">Book your first service to get started with Zimma.</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest opacity-80 sm:text-xs">
+              Welcome
+            </p>
+            <h1 className="mt-1 text-2xl font-bold sm:text-4xl">
+              Hi {name} 👋
+            </h1>
+            <p className="mt-2 max-w-xl text-sm opacity-90 sm:text-base">
+              Book your first service to get started with Zimma.
+            </p>
           </div>
           <Link to="/book" className="w-full sm:w-auto">
-            <Button size="lg" variant="secondary" className="w-full gap-2 btn-glow sm:w-auto">
+            <Button
+              size="lg"
+              variant="secondary"
+              className="w-full gap-2 btn-glow sm:w-auto"
+            >
               <Plus className="h-4 w-4" /> Book a Service
             </Button>
           </Link>
@@ -186,7 +303,9 @@ function OverviewPanel({
             <Reveal key={s.l} delay={i * 80}>
               <div className="rounded-2xl bg-white/10 p-3 backdrop-blur transition hover:bg-white/15 sm:p-4">
                 <div className="text-xl font-bold sm:text-2xl">{s.v}</div>
-                <div className="mt-1 text-[11px] opacity-90 sm:text-xs">{s.l}</div>
+                <div className="mt-1 text-[11px] opacity-90 sm:text-xs">
+                  {s.l}
+                </div>
               </div>
             </Reveal>
           ))}
@@ -195,7 +314,6 @@ function OverviewPanel({
 
       <BecomeProCTA application={application} onBecomePro={onBecomePro} />
 
-
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6 lg:col-span-2">
           <div className="flex items-center justify-between">
@@ -203,16 +321,26 @@ function OverviewPanel({
           </div>
           <div className="mt-4">
             {bookings === null ? (
-              <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
             ) : upcoming.length === 0 ? (
               <EmptyState
                 title="No upcoming bookings"
                 subtitle="Your confirmed jobs will appear here."
-                cta={<Link to="/book"><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> New booking</Button></Link>}
+                cta={
+                  <Link to="/book">
+                    <Button size="sm" className="gap-2">
+                      <Plus className="h-4 w-4" /> New booking
+                    </Button>
+                  </Link>
+                }
               />
             ) : (
               <div className="space-y-3">
-                {upcoming.slice(0, 3).map((b) => <CompactBookingRow key={b.id} b={b} />)}
+                {upcoming.slice(0, 3).map((b) => (
+                  <CompactBookingRow key={b.id} b={b} />
+                ))}
               </div>
             )}
           </div>
@@ -225,19 +353,31 @@ function OverviewPanel({
           </div>
           <div className="mt-4 space-y-3">
             {loading ? (
-              <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
             ) : providers.length === 0 ? (
-              <p className="py-4 text-center text-xs text-muted-foreground">No approved pros yet.</p>
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                No approved pros yet.
+              </p>
             ) : (
               providers.slice(0, 4).map((p) => (
-                <Link to="/providers/$id" params={{ id: p.id }} key={p.id} className="flex items-center gap-3 rounded-xl p-1 hover:bg-accent">
+                <Link
+                  to="/providers/$id"
+                  params={{ id: p.id }}
+                  key={p.id}
+                  className="flex items-center gap-3 rounded-xl p-1 hover:bg-accent"
+                >
                   <img src={p.avatar} alt="" className="h-10 w-10 rounded-xl" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{p.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{p.trade}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {p.trade}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1 text-xs">
-                    <Star className="h-3 w-3 fill-amber-400 text-amber-400" /> {p.rating}
+                    <Star className="h-3 w-3 fill-amber-400 text-amber-400" />{" "}
+                    {p.rating}
                   </div>
                 </Link>
               ))
@@ -250,8 +390,12 @@ function OverviewPanel({
 }
 
 function BecomeProCTA({
-  application, onBecomePro,
-}: { application?: { status: "pending" | "approved" | "rejected" }; onBecomePro: () => void }) {
+  application,
+  onBecomePro,
+}: {
+  application?: { status: "pending" | "approved" | "rejected" };
+  onBecomePro: () => void;
+}) {
   if (application?.status === "pending") {
     return (
       <Card className="mt-6 rounded-2xl border-amber-500/30 bg-amber-50 p-5 shadow-soft sm:p-6">
@@ -261,14 +405,21 @@ function BecomeProCTA({
               <Wrench className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-amber-900">Service Pro application under review</p>
+              <p className="text-sm font-semibold text-amber-900">
+                Service Pro application under review
+              </p>
               <p className="mt-0.5 text-xs text-amber-800/80">
-                Our Super Admin is verifying your credentials. You can keep browsing and booking in the meantime.
+                Our Super Admin is verifying your credentials. You can keep
+                browsing and booking in the meantime.
               </p>
             </div>
           </div>
           <Link to="/auth-pending">
-            <Button size="sm" variant="outline" className="gap-1 border-amber-600/40 bg-white text-amber-800 hover:bg-amber-100">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1 border-amber-600/40 bg-white text-amber-800 hover:bg-amber-100"
+            >
               View status <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
@@ -286,26 +437,35 @@ function BecomeProCTA({
             </span>
             <div className="min-w-0">
               <p className="text-sm font-semibold">Pro application declined</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Contact support for details or reapply below.</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Contact support for details or reapply below.
+              </p>
             </div>
           </div>
-          <Button size="sm" onClick={onBecomePro} className="gap-1">Reapply</Button>
+          <Button size="sm" onClick={onBecomePro} className="gap-1">
+            Reapply
+          </Button>
         </div>
       </Card>
     );
   }
   return (
-    <Card className="mt-6 overflow-hidden rounded-3xl border-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-5 text-white shadow-card sm:p-7">
+    <Card className="mt-6 overflow-hidden rounded-3xl border-0 bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 p-5 text-white shadow-card sm:p-7">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-start gap-4">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-glow">
             <Sparkles className="h-6 w-6" />
           </span>
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary/80">Earn with Zimma</p>
-            <h3 className="mt-1 text-lg font-bold sm:text-xl">Become a Service Pro</h3>
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary/80">
+              Earn with Zimma
+            </p>
+            <h3 className="mt-1 text-lg font-bold sm:text-xl">
+              Become a Service Pro
+            </h3>
             <p className="mt-1 max-w-md text-sm text-white/70">
-              Are you an electrician, plumber, cleaner or handyman? Apply once — we'll verify your CNIC and get you jobs in Karachi.
+              Are you an electrician, plumber, cleaner or handyman? Apply once —
+              we'll verify your CNIC and get you jobs in Karachi.
             </p>
           </div>
         </div>
@@ -323,7 +483,13 @@ type BookingRow = {
   provider_id: string;
   service_type: string;
   booking_date: string;
-  status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "rejected";
+  status:
+    | "pending"
+    | "confirmed"
+    | "in_progress"
+    | "completed"
+    | "cancelled"
+    | "rejected";
   price: number;
   address: string | null;
   created_at: string;
@@ -345,11 +511,16 @@ function useCustomerBookings() {
   const readyRef = useRef(false);
   const rowsRef = useRef<BookingRow[]>([]);
   useEffect(() => {
-    if (!authUser) { setRows([]); rowsRef.current = []; return; }
+    if (!authUser) {
+      setRows([]);
+      rowsRef.current = [];
+      return;
+    }
     let mounted = true;
     const load = async () => {
       const { data } = await supabase
-        .from("bookings").select("*")
+        .from("bookings")
+        .select("*")
         .eq("customer_id", authUser.id)
         .order("booking_date", { ascending: false });
       if (mounted) {
@@ -360,26 +531,49 @@ function useCustomerBookings() {
       }
     };
     load();
-    const ch = supabase.channel(`bookings-cust-${authUser.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: `customer_id=eq.${authUser.id}` }, (payload) => {
-        const eventType = payload.eventType;
-        const nextRow = payload.new as BookingRow | null;
-        const oldRow = payload.old as BookingRow | null;
-        if (readyRef.current) {
-          if (eventType === "INSERT") toast.success("New booking added to your dashboard");
-          if (eventType === "UPDATE" && nextRow && oldRow && nextRow.status !== oldRow.status) {
-            toast.success(`Booking is now ${nextRow.status.replace("_", " ")}`);
+    const ch = supabase
+      .channel(`bookings-cust-${authUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "bookings",
+          filter: `customer_id=eq.${authUser.id}`,
+        },
+        (payload) => {
+          const eventType = payload.eventType;
+          const nextRow = payload.new as BookingRow | null;
+          const oldRow = payload.old as BookingRow | null;
+          if (readyRef.current) {
+            if (eventType === "INSERT")
+              toast.success("New booking added to your dashboard");
+            if (
+              eventType === "UPDATE" &&
+              nextRow &&
+              oldRow &&
+              nextRow.status !== oldRow.status
+            ) {
+              toast.success(
+                `Booking is now ${nextRow.status.replace("_", " ")}`,
+              );
+            }
+            if (eventType === "DELETE") toast("A booking was removed");
           }
-          if (eventType === "DELETE") toast("A booking was removed");
-        }
-        if (nextRow && eventType === "UPDATE") {
-          rowsRef.current = rowsRef.current.map((row) => row.id === nextRow.id ? nextRow : row);
-          setRows([...rowsRef.current]);
-        }
-        load();
-      })
+          if (nextRow && eventType === "UPDATE") {
+            rowsRef.current = rowsRef.current.map((row) =>
+              row.id === nextRow.id ? nextRow : row,
+            );
+            setRows([...rowsRef.current]);
+          }
+          load();
+        },
+      )
       .subscribe();
-    return () => { mounted = false; supabase.removeChannel(ch); };
+    return () => {
+      mounted = false;
+      supabase.removeChannel(ch);
+    };
   }, [authUser?.id]);
   return [rows, setRows] as const;
 }
@@ -410,9 +604,13 @@ function CompactBookingRow({ b }: { b: BookingRow }) {
     <div className="flex items-center justify-between gap-3 rounded-2xl border border-border p-3">
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{b.service_type}</p>
-        <p className="truncate text-xs text-muted-foreground">{new Date(b.booking_date).toLocaleString()}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {new Date(b.booking_date).toLocaleString()}
+        </p>
       </div>
-      <Badge className={`rounded-full ${statusStyle[b.status]}`}>{statusLabel(b.status)}</Badge>
+      <Badge className={`rounded-full ${statusStyle[b.status]}`}>
+        {statusLabel(b.status)}
+      </Badge>
     </div>
   );
 }
@@ -432,9 +630,17 @@ function BookingTimeline({ status }: { status: BookingRow["status"] }) {
         const done = index <= current;
         return (
           <li key={step.key} className="min-w-0">
-            <div className={`h-1.5 rounded-full ${done ? "bg-primary" : "bg-muted"}`} />
-            <div className={`mt-2 flex items-center gap-1 text-[11px] font-medium ${done ? "text-primary" : "text-muted-foreground"}`}>
-              {done ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <Clock className="h-3.5 w-3.5 shrink-0" />}
+            <div
+              className={`h-1.5 rounded-full ${done ? "bg-primary" : "bg-muted"}`}
+            />
+            <div
+              className={`mt-2 flex items-center gap-1 text-[11px] font-medium ${done ? "text-primary" : "text-muted-foreground"}`}
+            >
+              {done ? (
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <Clock className="h-3.5 w-3.5 shrink-0" />
+              )}
               <span className="truncate">{step.label}</span>
             </div>
           </li>
@@ -448,25 +654,51 @@ function useCustomerReviews() {
   const { authUser } = useAuth();
   const [reviews, setReviews] = useState<ReviewRow[] | null>(null);
   useEffect(() => {
-    if (!authUser) { setReviews([]); return; }
+    if (!authUser) {
+      setReviews([]);
+      return;
+    }
     let mounted = true;
     const load = async () => {
       const { data } = await supabase
         .from("reviews")
-        .select("id, customer_id, provider_id, booking_id, rating, comment, created_at")
+        .select(
+          "id, customer_id, provider_id, booking_id, rating, comment, created_at",
+        )
         .eq("customer_id", authUser.id);
       if (mounted) setReviews((data ?? []) as ReviewRow[]);
     };
     load();
-    const ch = supabase.channel(`reviews-cust-${authUser.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "reviews", filter: `customer_id=eq.${authUser.id}` }, load)
+    const ch = supabase
+      .channel(`reviews-cust-${authUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "reviews",
+          filter: `customer_id=eq.${authUser.id}`,
+        },
+        load,
+      )
       .subscribe();
-    return () => { mounted = false; supabase.removeChannel(ch); };
+    return () => {
+      mounted = false;
+      supabase.removeChannel(ch);
+    };
   }, [authUser?.id]);
   return [reviews, setReviews] as const;
 }
 
-function ReviewForm({ booking, existing, onSaved }: { booking: BookingRow; existing?: ReviewRow; onSaved: (review: ReviewRow) => void }) {
+function ReviewForm({
+  booking,
+  existing,
+  onSaved,
+}: {
+  booking: BookingRow;
+  existing?: ReviewRow;
+  onSaved: (review: ReviewRow) => void;
+}) {
   const { authUser } = useAuth();
   const [rating, setRating] = useState(existing?.rating ?? 0);
   const [comment, setComment] = useState(existing?.comment ?? "");
@@ -482,9 +714,18 @@ function ReviewForm({ booking, existing, onSaved }: { booking: BookingRow; exist
   const submit = async () => {
     if (!authUser) return;
     setError(null);
-    if (booking.status !== "completed") { setError("You can only review a completed booking."); return; }
-    if (rating < 1 || rating > 5) { setError("Please pick a star rating between 1 and 5."); return; }
-    if (comment.trim().length > 1000) { setError("Please keep your review under 1000 characters."); return; }
+    if (booking.status !== "completed") {
+      setError("You can only review a completed booking.");
+      return;
+    }
+    if (rating < 1 || rating > 5) {
+      setError("Please pick a star rating between 1 and 5.");
+      return;
+    }
+    if (comment.trim().length > 1000) {
+      setError("Please keep your review under 1000 characters.");
+      return;
+    }
     setSaving(true);
     const payload = {
       customer_id: authUser.id,
@@ -494,15 +735,31 @@ function ReviewForm({ booking, existing, onSaved }: { booking: BookingRow; exist
       comment: comment.trim() || null,
     };
     const query = existing
-      ? supabase.from("reviews").update(payload).eq("id", existing.id).select("id, customer_id, provider_id, booking_id, rating, comment, created_at").single()
-      : supabase.from("reviews").insert(payload).select("id, customer_id, provider_id, booking_id, rating, comment, created_at").single();
+      ? supabase
+          .from("reviews")
+          .update(payload)
+          .eq("id", existing.id)
+          .select(
+            "id, customer_id, provider_id, booking_id, rating, comment, created_at",
+          )
+          .single()
+      : supabase
+          .from("reviews")
+          .insert(payload)
+          .select(
+            "id, customer_id, provider_id, booking_id, rating, comment, created_at",
+          )
+          .single();
     const { data, error: err } = await query;
     setSaving(false);
     if (err) {
       const msg = err.message || "";
-      if (msg.includes("reviews_unique_per_booking") || (err.code === "23505")) {
+      if (msg.includes("reviews_unique_per_booking") || err.code === "23505") {
         setError("You've already left a review for this booking.");
-      } else if (msg.toLowerCase().includes("row-level") || msg.toLowerCase().includes("permission")) {
+      } else if (
+        msg.toLowerCase().includes("row-level") ||
+        msg.toLowerCase().includes("permission")
+      ) {
         setError("Reviews are only allowed for your own completed bookings.");
       } else if (msg.includes("reviews_rating_check")) {
         setError("Please pick a star rating between 1 and 5.");
@@ -519,13 +776,28 @@ function ReviewForm({ booking, existing, onSaved }: { booking: BookingRow; exist
     <div className="mt-4 rounded-2xl border border-border bg-muted/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold">{existing ? "Your review" : "Leave a review"}</p>
-          <p className="text-xs text-muted-foreground">One review per completed booking.</p>
+          <p className="text-sm font-semibold">
+            {existing ? "Your review" : "Leave a review"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            One review per completed booking.
+          </p>
         </div>
         <div className="flex gap-1" aria-label="Choose rating">
           {[1, 2, 3, 4, 5].map((value) => (
-            <button key={value} type="button" onClick={() => { setRating(value); setError(null); }} className="transition hover:scale-110" aria-label={`${value} stars`}>
-              <Star className={`h-5 w-5 ${rating >= value ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40"}`} />
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                setRating(value);
+                setError(null);
+              }}
+              className="transition hover:scale-110"
+              aria-label={`${value} stars`}
+            >
+              <Star
+                className={`h-5 w-5 ${rating >= value ? "fill-amber-400 text-amber-400" : "text-muted-foreground/40"}`}
+              />
             </button>
           ))}
         </div>
@@ -537,9 +809,13 @@ function ReviewForm({ booking, existing, onSaved }: { booking: BookingRow; exist
         maxLength={1000}
         className="mt-3 min-h-24 rounded-xl bg-background"
       />
-      {error && <p className="mt-2 text-xs font-medium text-destructive">{error}</p>}
+      {error && (
+        <p className="mt-2 text-xs font-medium text-destructive">{error}</p>
+      )}
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="text-[11px] text-muted-foreground">{comment.length}/1000</span>
+        <span className="text-[11px] text-muted-foreground">
+          {comment.length}/1000
+        </span>
         <Button size="sm" onClick={submit} disabled={saving || rating < 1}>
           {saving ? "Saving…" : existing ? "Update review" : "Submit review"}
         </Button>
@@ -548,16 +824,35 @@ function ReviewForm({ booking, existing, onSaved }: { booking: BookingRow; exist
   );
 }
 
-function BookingActions({ b, setRows }: { b: BookingRow; setRows: Dispatch<SetStateAction<BookingRow[] | null>> }) {
+function BookingActions({
+  b,
+  setRows,
+}: {
+  b: BookingRow;
+  setRows: Dispatch<SetStateAction<BookingRow[] | null>>;
+}) {
   const [busy, setBusy] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
 
   const cancelBooking = async () => {
     setBusy(true);
-    const { error } = await supabase.from("bookings").update({ status: "cancelled" }).eq("id", b.id).eq("customer_id", b.customer_id);
+    const { error } = await supabase
+      .from("bookings")
+      .update({ status: "cancelled" })
+      .eq("id", b.id)
+      .eq("customer_id", b.customer_id);
     setBusy(false);
-    if (error) { toast.error(error.message); return; }
-    setRows((prev) => prev ? prev.map((row) => row.id === b.id ? { ...row, status: "cancelled" } : row) : prev);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setRows((prev) =>
+      prev
+        ? prev.map((row) =>
+            row.id === b.id ? { ...row, status: "cancelled" } : row,
+          )
+        : prev,
+    );
     toast.success("Booking cancelled");
   };
 
@@ -571,37 +866,112 @@ function BookingActions({ b, setRows }: { b: BookingRow; setRows: Dispatch<SetSt
   };
 
   const messageButton = (
-    <Button size="sm" variant="outline" disabled={chatBusy} onClick={messageProvider} className="gap-1">
-      {chatBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={chatBusy}
+      onClick={messageProvider}
+      className="gap-1"
+    >
+      {chatBusy ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <MessageSquare className="h-3.5 w-3.5" />
+      )}
       Message Pro
     </Button>
   );
 
   if (b.status === "pending") {
-    return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Button size="sm" variant="outline" disabled={busy} onClick={cancelBooking}>Cancel request</Button></div>;
+    return (
+      <div className="flex flex-wrap justify-end gap-2">
+        {messageButton}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={cancelBooking}
+        >
+          Cancel request
+        </Button>
+      </div>
+    );
   }
   if (b.status === "confirmed") {
-    return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Button size="sm" variant="outline" disabled={busy} onClick={cancelBooking}>Cancel booking</Button></div>;
+    return (
+      <div className="flex flex-wrap justify-end gap-2">
+        {messageButton}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={cancelBooking}
+        >
+          Cancel booking
+        </Button>
+      </div>
+    );
   }
   if (b.status === "in_progress") {
-    return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Badge className="rounded-full bg-blue-100 text-blue-700 hover:bg-blue-100">Job active</Badge></div>;
+    return (
+      <div className="flex flex-wrap justify-end gap-2">
+        {messageButton}
+        <Badge className="rounded-full bg-blue-100 text-blue-700 hover:bg-blue-100">
+          Job active
+        </Badge>
+      </div>
+    );
   }
   if (b.status === "completed") {
-    return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Link to="/book" search={{ providerId: b.provider_id }}><Button size="sm" variant="outline">Book again</Button></Link></div>;
+    return (
+      <div className="flex flex-wrap justify-end gap-2">
+        {messageButton}
+        <Link to="/book" search={{ providerId: b.provider_id }}>
+          <Button size="sm" variant="outline">
+            Book again
+          </Button>
+        </Link>
+      </div>
+    );
   }
-  return <div className="flex flex-wrap justify-end gap-2">{messageButton}<Link to="/book"><Button size="sm" variant="outline">New booking</Button></Link></div>;
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {messageButton}
+      <Link to="/book">
+        <Button size="sm" variant="outline">
+          New booking
+        </Button>
+      </Link>
+    </div>
+  );
 }
 
-function BookingsPanel({ rows, setRows, focusBookingId, focusToken }: { rows: BookingRow[] | null; setRows: Dispatch<SetStateAction<BookingRow[] | null>>; focusBookingId?: string; focusToken?: number }) {
+function BookingsPanel({
+  rows,
+  setRows,
+  focusBookingId,
+  focusToken,
+}: {
+  rows: BookingRow[] | null;
+  setRows: Dispatch<SetStateAction<BookingRow[] | null>>;
+  focusBookingId?: string;
+  focusToken?: number;
+}) {
   const [reviews, setReviews] = useCustomerReviews();
-  const reviewByBooking = new Map((reviews ?? []).filter((r) => r.booking_id).map((r) => [r.booking_id as string, r]));
+  const reviewByBooking = new Map(
+    (reviews ?? [])
+      .filter((r) => r.booking_id)
+      .map((r) => [r.booking_id as string, r]),
+  );
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // Deep-link: scroll the focused booking into view + flash a highlight ring.
   useEffect(() => {
     if (!focusBookingId || !rows) return;
-    const el = containerRef.current?.querySelector<HTMLDivElement>(`[data-booking-id="${focusBookingId}"]`);
+    const el = containerRef.current?.querySelector<HTMLDivElement>(
+      `[data-booking-id="${focusBookingId}"]`,
+    );
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     setHighlightId(focusBookingId);
@@ -614,13 +984,24 @@ function BookingsPanel({ rows, setRows, focusBookingId, focusToken }: { rows: Bo
       <SectionHeader
         title="My bookings"
         subtitle="Manage upcoming jobs and reschedule when you need."
-        action={<Link to="/book"><Button className="gap-2"><Plus className="h-4 w-4" /> New booking</Button></Link>}
+        action={
+          <Link to="/book">
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" /> New booking
+            </Button>
+          </Link>
+        }
       />
       <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
         {rows === null ? (
-          <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          <div className="flex justify-center py-10">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
         ) : rows.length === 0 ? (
-          <EmptyState title="No bookings yet" subtitle="When you book a service, it will show up here." />
+          <EmptyState
+            title="No bookings yet"
+            subtitle="When you book a service, it will show up here."
+          />
         ) : (
           <div ref={containerRef} className="space-y-3">
             {rows.map((b) => (
@@ -635,11 +1016,18 @@ function BookingsPanel({ rows, setRows, focusBookingId, focusToken }: { rows: Bo
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-semibold">{b.service_type}</p>
-                      <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${statusStyle[b.status]}`}>{statusLabel(b.status)}</span>
+                      <p className="truncate text-sm font-semibold">
+                        {b.service_type}
+                      </p>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${statusStyle[b.status]}`}
+                      >
+                        {statusLabel(b.status)}
+                      </span>
                     </div>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {new Date(b.booking_date).toLocaleString()} · {b.address ?? "No address"}
+                      {new Date(b.booking_date).toLocaleString()} ·{" "}
+                      {b.address ?? "No address"}
                     </p>
                     <BookingTimeline status={b.status} />
                   </div>
@@ -652,11 +1040,17 @@ function BookingsPanel({ rows, setRows, focusBookingId, focusToken }: { rows: Bo
                   <ReviewForm
                     booking={b}
                     existing={reviewByBooking.get(b.id)}
-                    onSaved={(review) => setReviews((prev) => {
-                      const current = prev ?? [];
-                      const exists = current.some((r) => r.id === review.id);
-                      return exists ? current.map((r) => r.id === review.id ? review : r) : [review, ...current];
-                    })}
+                    onSaved={(review) =>
+                      setReviews((prev) => {
+                        const current = prev ?? [];
+                        const exists = current.some((r) => r.id === review.id);
+                        return exists
+                          ? current.map((r) =>
+                              r.id === review.id ? review : r,
+                            )
+                          : [review, ...current];
+                      })
+                    }
                   />
                 )}
               </div>
@@ -668,31 +1062,51 @@ function BookingsPanel({ rows, setRows, focusBookingId, focusToken }: { rows: Bo
   );
 }
 
-function FavouritesPanel({ providers, loading }: { providers: ReturnType<typeof rowToProvider>[]; loading: boolean }) {
+function FavouritesPanel({
+  providers,
+  loading,
+}: {
+  providers: ReturnType<typeof rowToProvider>[];
+  loading: boolean;
+}) {
   const { ids: favIds, ready } = useFavorites();
   const list = providers.filter((p) => favIds.has(p.id));
   const isLoading = loading || !ready;
 
   return (
     <>
-      <SectionHeader title="My favourites" subtitle="Pros you've saved for quick booking." />
+      <SectionHeader
+        title="My favourites"
+        subtitle="Pros you've saved for quick booking."
+      />
       {isLoading ? (
-        <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       ) : list.length === 0 ? (
         <EmptyState
           title="No favourites yet"
           subtitle="Tap the heart on any provider to save them here."
-          cta={<Link to="/providers"><Button size="sm">Browse pros</Button></Link>}
+          cta={
+            <Link to="/providers">
+              <Button size="sm">Browse pros</Button>
+            </Link>
+          }
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((p) => (
-            <Card key={p.id} className="rounded-2xl border-border bg-card p-5 shadow-soft transition hover:-translate-y-0.5 hover:shadow-card">
+            <Card
+              key={p.id}
+              className="rounded-2xl border-border bg-card p-5 shadow-soft transition hover:-translate-y-0.5 hover:shadow-card"
+            >
               <div className="flex items-start gap-3">
                 <img src={p.avatar} alt="" className="h-14 w-14 rounded-xl" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold">{p.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{p.trade}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {p.trade}
+                  </p>
                   <div className="mt-1 flex items-center gap-1 text-xs">
                     <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
                     <span className="font-medium">{p.rating}</span>
@@ -701,11 +1115,23 @@ function FavouritesPanel({ providers, loading }: { providers: ReturnType<typeof 
                 </div>
               </div>
               <div className="mt-4 flex gap-2">
-                <Link to="/providers/$id" params={{ id: p.id }} className="flex-1">
-                  <Button variant="outline" size="sm" className="w-full">Profile</Button>
+                <Link
+                  to="/providers/$id"
+                  params={{ id: p.id }}
+                  className="flex-1"
+                >
+                  <Button variant="outline" size="sm" className="w-full">
+                    Profile
+                  </Button>
                 </Link>
-                <Link to="/book" search={{ providerId: p.id }} className="flex-1">
-                  <Button size="sm" className="w-full">Book</Button>
+                <Link
+                  to="/book"
+                  search={{ providerId: p.id }}
+                  className="flex-1"
+                >
+                  <Button size="sm" className="w-full">
+                    Book
+                  </Button>
                 </Link>
               </div>
             </Card>
@@ -719,13 +1145,19 @@ function FavouritesPanel({ providers, loading }: { providers: ReturnType<typeof 
 function HistoryPanel() {
   return (
     <>
-      <SectionHeader title="Booking history" subtitle="Every completed job will appear here." />
+      <SectionHeader
+        title="Booking history"
+        subtitle="Every completed job will appear here."
+      />
       <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search history…" className="rounded-xl pl-9" />
         </div>
-        <EmptyState title="No history yet" subtitle="You haven't completed any bookings." />
+        <EmptyState
+          title="No history yet"
+          subtitle="You haven't completed any bookings."
+        />
       </Card>
     </>
   );
@@ -734,7 +1166,10 @@ function HistoryPanel() {
 function NotificationsPanel() {
   return (
     <>
-      <SectionHeader title="Notifications" subtitle="Every booking, message and review — live from your account." />
+      <SectionHeader
+        title="Notifications"
+        subtitle="Every booking, message and review — live from your account."
+      />
       <LiveNotificationsPanel role="customer" />
     </>
   );
@@ -746,12 +1181,17 @@ function SettingsPanel() {
   const [name, setName] = useState(cust?.name ?? "");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { setName(cust?.name ?? ""); }, [cust?.name]);
+  useEffect(() => {
+    setName(cust?.name ?? "");
+  }, [cust?.name]);
 
   const save = async () => {
     if (!cust) return;
     setSaving(true);
-    const { error } = await supabase.from("customer_profiles").update({ name }).eq("id", cust.id);
+    const { error } = await supabase
+      .from("customer_profiles")
+      .update({ name })
+      .eq("id", cust.id);
     setSaving(false);
     if (error) return toast.error(error.message);
     toast.success("Profile updated");
@@ -760,34 +1200,62 @@ function SettingsPanel() {
 
   return (
     <>
-      <SectionHeader title="Settings" subtitle="Manage your profile, security and preferences." />
+      <SectionHeader
+        title="Settings"
+        subtitle="Manage your profile, security and preferences."
+      />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
-          <h2 className="flex items-center gap-2 text-lg font-bold"><User className="h-4 w-4" /> Profile</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <User className="h-4 w-4" /> Profile
+          </h2>
           <div className="mt-4 space-y-3">
             <div>
               <label className="text-xs text-muted-foreground">Full name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 rounded-xl" />
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1 rounded-xl"
+              />
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Email</label>
-              <Input value={cust?.email ?? ""} disabled className="mt-1 rounded-xl" />
+              <Input
+                value={cust?.email ?? ""}
+                disabled
+                className="mt-1 rounded-xl"
+              />
             </div>
-            <Button onClick={save} disabled={saving || !name.trim()} className="w-full sm:w-auto">
+            <Button
+              onClick={save}
+              disabled={saving || !name.trim()}
+              className="w-full sm:w-auto"
+            >
               {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
         </Card>
 
         <Card className="rounded-2xl border-border bg-card p-5 shadow-soft sm:p-6">
-          <h2 className="flex items-center gap-2 text-lg font-bold"><Lock className="h-4 w-4" /> Preferences</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <Lock className="h-4 w-4" /> Preferences
+          </h2>
           <div className="mt-4 space-y-4">
             {[
-              { l: "Email notifications", s: "Booking confirmations & reminders" },
+              {
+                l: "Email notifications",
+                s: "Booking confirmations & reminders",
+              },
               { l: "SMS alerts", s: "Critical updates to your phone" },
-              { l: "Promotional offers", s: "Discounts and seasonal campaigns" },
+              {
+                l: "Promotional offers",
+                s: "Discounts and seasonal campaigns",
+              },
             ].map((p, i) => (
-              <div key={p.l} className="flex items-center justify-between gap-4">
+              <div
+                key={p.l}
+                className="flex items-center justify-between gap-4"
+              >
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{p.l}</p>
                   <p className="text-xs text-muted-foreground">{p.s}</p>
@@ -797,7 +1265,9 @@ function SettingsPanel() {
             ))}
           </div>
           <div className="mt-6 border-t border-border pt-4">
-            <Button variant="destructive" size="sm" className="gap-2"><Trash2 className="h-4 w-4" /> Delete account</Button>
+            <Button variant="destructive" size="sm" className="gap-2">
+              <Trash2 className="h-4 w-4" /> Delete account
+            </Button>
           </div>
         </Card>
       </div>

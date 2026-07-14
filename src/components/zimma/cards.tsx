@@ -33,21 +33,21 @@ export function ServiceCard({ icon: Icon, name, count, color, slug }: { icon: Lu
 export function ProviderCard({ p }: { p: Provider }) {
   const [hoverStars, setHoverStars] = useState(0);
   return (
-    <Card className="hover-lift group flex flex-col gap-4 rounded-2xl border-border/60 bg-card p-5 shadow-soft">
+    <Card className="hover-lift group flex flex-col gap-4 rounded-2xl border-border/60 bg-card p-5 shadow-soft min-h-95 min-w-60">
       <div className="flex items-start gap-4">
         <img
           src={p.avatar}
           alt={p.name}
           className="h-16 w-16 shrink-0 rounded-2xl ring-2 ring-primary/10 transition duration-300 group-hover:scale-105 group-hover:ring-primary/30"
         />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 relative">
           <div className="flex items-center gap-1.5">
             <h3 className="truncate text-base font-semibold text-foreground">{p.name}</h3>
             {p.verified && <ShieldCheck className="h-4 w-4 shrink-0 text-success" />}
           </div>
           <p className="truncate text-sm text-muted-foreground">{p.trade}</p>
-          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <MapPin className="h-3 w-3" /> {p.area}
+          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground min-w-38">
+            <MapPin className="h-4! w-4!" /> {p.area}
           </div>
         </div>
         <FavoriteButton providerId={p.id} />
@@ -114,12 +114,12 @@ export function ProviderCard({ p }: { p: Provider }) {
                     aria-disabled
                   >
                     <ShieldAlert className="h-3.5 w-3.5 shrink-0" /> 
-                    <span className="block max-w-[100px] break-words">
+                    <span className="block max-w-25 break-words">
                       Verification pending
                     </span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[240px] text-xs">{UNVERIFIED_BOOK_MESSAGE}</TooltipContent>
+                <TooltipContent className="max-w-60 text-xs">{UNVERIFIED_BOOK_MESSAGE}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           ) : (
